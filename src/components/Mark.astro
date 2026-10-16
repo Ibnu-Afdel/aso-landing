@@ -1,0 +1,14 @@
+---
+// The Aso crystal. Dark facets use currentColor; the sage facet keeps the accent.
+// `animated` lets the hero assemble and float the facets (see global.css).
+interface Props { class?: string; animated?: boolean; title?: string }
+const { class: className = '', animated = false, title } = Astro.props;
+---
+<svg class:list={[className, animated && 'mark-animated']} viewBox="-62 0 440 440" xmlns="http://www.w3.org/2000/svg" role={title ? 'img' : undefined} aria-hidden={title ? undefined : 'true'} aria-label={title}>
+  <g stroke-width="12" stroke-linejoin="round">
+    <polygon class="facet facet-1" fill="currentColor" stroke="currentColor" points="71,94 75,98 111,265 114,310 104,395 12,306 10,157" />
+    <polygon class="facet facet-2" fill="currentColor" stroke="currentColor" points="157,10 218,80 220,98 159,268 143,271 98,85 100,75" />
+    <polygon class="facet facet-3" fill="var(--color-sage)" stroke="var(--color-sage)" points="245,119 305,171 305,265 263,331 252,334 183,287 182,279" />
+    <polygon class="facet facet-4" fill="currentColor" stroke="currentColor" points="151,305 240,360 239,364 154,429 144,430 129,419 141,308" />
+  </g>
+</svg>
