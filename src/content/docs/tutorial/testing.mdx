@@ -75,12 +75,12 @@ uv run pytest
 ```
 
 ```
-36 passed in 11.33s
+36 passed in 11.33s   # the todo tests plus the starter kit's own
 ```
 
 `aso test` wraps the same `pytest` invocation with convenience flags —
 `--filter` (`-k`), `--parallel` (`-n auto`), `--coverage`, and `--bail` (`-x`) — so
-`aso test --filter test_todos` runs just this file.
+`aso test --filter test_todos` runs only this file.
 
 ## Architecture tests run too
 

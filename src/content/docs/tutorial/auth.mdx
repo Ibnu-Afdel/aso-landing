@@ -13,19 +13,8 @@ for actions that take an id from the URL.
 
 ## The relationship
 
-<CodeFile name="app/models/user.py">
-```python
-from aso.database import has_many
-
-class User(MustVerifyEmail, Authenticatable, Model):
-    # ...
-
-    todos: Mapped[list["Todo"]] = has_many("Todo")
-```
-</CodeFile>
-
-With this declared, `user.todos` is available anywhere you have a `User` instance — a
-controller, a test, a factory state.
+You added `todos = has_many("Todo")` to `User` on the [model page](/docs/tutorial/model), so
+`user.todos` works anywhere you have a `User`: a controller, a test, a factory state.
 
 ## Scoping `index`
 
@@ -85,14 +74,7 @@ async def destroy(self, todo: Todo):
 </CodeFile>
 
 If the policy method returns `False`, `authorize()` raises `AuthorizationException`, which
-Aso turns into an HTTP 403 before your method's next line runs. Nothing in the response
-reveals whether the todo exists — it just isn't yours.
-
-<Callout type="note">
-The user model and the `self.authorize()` method you just used both come from
-`aso.auth` — the convention that resolves `Todo` to `app/policies/todo_policy.py` is part of
-the framework, not something you register by hand.
-</Callout>
+Aso turns into an HTTP 403 before your method's next line runs.
 
 ## What you used
 

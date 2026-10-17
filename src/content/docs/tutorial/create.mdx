@@ -86,7 +86,7 @@ otherwise.
 ## Flash messages
 
 `.with_flash("success", "Todo added.")` puts a message on the session for the next request.
-Aso's starter kit already wires a toast for it — `useFlashToast()` in `app.tsx` listens for
+Aso's starter kit already wires a toast for it — the `useFlashToast()` hook behind its toaster listens for
 `success`/`error` flash keys and shows a toast automatically. You don't need to read
 `usePage().props.flash` yourself unless you want different behavior.
 

@@ -1,6 +1,6 @@
 ---
 title: Model and migration
-description: Generate the Todo model, fix its table name, and run the migration.
+description: Generate the Todo model and its migration, then run it.
 section: "Tutorial: a todo app"
 order: 4
 ---
@@ -38,35 +38,17 @@ class Todo(Model):
 ```
 </CodeFile>
 
-## Two small fixes
+## Let the controller set the owner
 
-The generator pluralizes table names for you — but English pluralization is hard, and
-`Todo` becomes `todoes`. Override `__tablename__` to fix it:
-
-```python
-class Todo(Model):
-    __tablename__ = "todos"
-```
-
-The controller will also need to set `user_id` itself (from the signed-in user, never from the
-form). Add it to `__fillable__` so `Todo.create()` accepts it — `__fillable__` only guards
-which keys your own code can mass-assign, and the form's validated data never includes
-`user_id` in the first place:
+The controller will set `user_id` itself, from the signed-in user and never from the form.
+Add it to `__fillable__` so `Todo.create()` accepts it. `__fillable__` only limits which keys
+your own code can mass-assign, and the form's validated data never includes `user_id`:
 
 ```python
     __fillable__ = ["title", "done", "user_id"]
 ```
 
-<Callout type="warning">
-`aso make:migration`'s autogenerate compares your models against the live database schema —
-and tables that aren't declared as `Model` subclasses (`sessions`, `password_reset_tokens`,
-`failed_jobs`, all created by the skeleton's first migration) aren't part of that comparison.
-Open the generated migration before running it: if it has `op.drop_table(...)` calls for
-tables you didn't touch, delete those lines. This is normal Alembic autogenerate behavior, not
-specific to Aso, but it's worth checking every time.
-</Callout>
-
-The trimmed migration:
+The generated migration creates the `todos` table:
 
 <CodeFile name="database/migrations/..._create_todos_table.py">
 ```python
@@ -125,6 +107,6 @@ Migration table migrated successfully.
 ## What you used
 
 - `aso make:model -m -c -r --fields=` — model, migration, and resource controller generation.
-- `__tablename__`, `__fillable__` — model attributes you can override.
+- `__fillable__` — which attributes `create()` accepts.
 - `belongs_to`, `has_many` — relationship declarations.
 - `aso migrate` — applies pending migrations.
