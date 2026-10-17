@@ -67,6 +67,25 @@ const jsonLd = {
     <Font cssVariable="--font-geist-mono" />
 
     <script is:inline>document.documentElement.classList.add('js');</script>
+    <script is:inline>
+      // QA only: ?qa-theme=dark|light forces a palette for screenshot tooling that can't
+      // emulate prefers-color-scheme from the command line. Sets the custom properties
+      // directly (not a CSS attribute selector) so it wins regardless of cascade layers.
+      // No effect without the param.
+      var qaTheme = new URLSearchParams(location.search).get('qa-theme');
+      var qaPalettes = {
+        dark: { '--bg': '#121917', '--fg': '#ece6da', '--muted': 'color-mix(in oklab, #ece6da 64%, transparent)', '--faint': 'color-mix(in oklab, #ece6da 11%, transparent)', '--raised': '#19221f', '--accent': '#8fae93', colorScheme: 'dark' },
+        light: { '--bg': '#f6f1e8', '--fg': '#213231', '--muted': 'color-mix(in oklab, #213231 68%, transparent)', '--faint': 'color-mix(in oklab, #213231 13%, transparent)', '--raised': '#fbf8f2', '--accent': '#6d8b71', colorScheme: 'light' },
+      };
+      if (qaPalettes[qaTheme]) {
+        var root = document.documentElement.style;
+        var palette = qaPalettes[qaTheme];
+        for (var key in palette) {
+          if (key === 'colorScheme') root.colorScheme = palette[key];
+          else root.setProperty(key, palette[key]);
+        }
+      }
+    </script>
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </head>
   <body class="grain min-h-screen">
