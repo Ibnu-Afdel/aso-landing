@@ -1,0 +1,206 @@
+---
+title: Validation
+description: FormRequest as a Pydantic model, custom rules, error messages, and file uploads.
+section: Core concepts
+order: 22
+---
+
+A `FormRequest` is a Pydantic model with a handful of Laravel-style hooks bolted on. Every
+field is a normal Pydantic field — `Field(...)` constraints, `str`/`int`/`EmailStr` types, and
+Pydantic's own validators all work exactly as they do anywhere else:
+
+<CodeFile name="app/http/requests/store_post_request.py">
+```python
+from pydantic import Field
+
+from aso.http import FormRequest
+
+
+class StorePostRequest(FormRequest):
+    title: str = Field(min_length=1, max_length=255)
+    body: str = Field(min_length=1)
+    published: bool = False
+```
+</CodeFile>
+
+Type a controller parameter as the subclass and the body is collected, validated, and handed
+to your method already clean — there's no manual `request.json()` and no `if errors: return`:
+
+```python
+async def store(self, form: StorePostRequest):
+    post = await Post.create(**form.validated())
+```
+
+`form.validated()` returns a plain `dict` of the declared fields only (minus any
+`*_confirmation` key) — exactly what a model's `create()`/`update()` wants, and nothing a user
+didn't declare could sneak through even if `__fillable__` allowed it.
+
+## Custom validators
+
+A Pydantic `field_validator`/`model_validator` works the same inside a `FormRequest` as in any
+other `BaseModel`:
+
+```python
+from pydantic import Field, field_validator
+
+from aso.http import FormRequest
+
+
+class StorePostRequest(FormRequest):
+    title: str = Field(min_length=1, max_length=255)
+    slug: str
+
+    @field_validator("slug")
+    @classmethod
+    def slug_is_lowercase(cls, value: str) -> str:
+        if value != value.lower():
+            raise ValueError("The slug must be lowercase.")
+        return value
+```
+
+## Async rules (`Unique`, `Exists`, and friends)
+
+A Pydantic validator can't `await` a database query. For rules that need to, attach one of
+`aso.validation`'s `Rule` classes as `Annotated` metadata — they run one at a time, after
+Pydantic's own checks pass, and each returns a rendered message instead of raising:
+
+<CodeFile name="app/http/requests/store_post_request.py">
+```python
+from typing import Annotated
+
+from pydantic import EmailStr, Field
+
+from aso.http import FormRequest
+from aso.validation import Unique
+
+
+class RegisterRequest(FormRequest):
+    email: Annotated[EmailStr, Unique("users", "email")]
+    password: str = Field(min_length=8)
+```
+</CodeFile>
+
+`Unique("users", "email")` fails if a row already matches; pass `ignore=lambda form:
+form.route("user")` to exclude the current record on an update. `Exists("posts", "id")` is the
+opposite — fails when nothing matches, useful for a foreign-key-style field that isn't an
+actual `ForeignKey` column. `Confirmed()` checks a field against `<field>_confirmation`. Table
+and column names are checked against a strict identifier pattern before they ever reach SQL —
+there's no way to pass a column name from user input.
+
+## Custom messages and attribute names
+
+Override `messages()` for field-specific text, keyed Laravel-style (`"field.rule"` or just
+`"field"`), and `attributes()` to rename a field in the default message:
+
+```python
+class StorePostRequest(FormRequest):
+    title: str = Field(min_length=1, max_length=255)
+
+    def messages(self) -> dict[str, str]:
+        return {"title.min": "Give the post a real title."}
+
+    def attributes(self) -> dict[str, str]:
+        return {"title": "post title"}
+```
+
+## `after()` and cross-field checks
+
+`after()` runs only once every field has already passed — add an error there for anything that
+depends on more than one field:
+
+```python
+class UpdateScheduleRequest(FormRequest):
+    starts_at: datetime
+    ends_at: datetime
+
+    async def after(self) -> None:
+        if self.ends_at <= self.starts_at:
+            self.add_error("ends_at", "The end time must be after the start time.")
+```
+
+## `prepare_for_validation()` and `authorize()`
+
+`prepare_for_validation()` runs first — use `self.merge({...})` to normalize input before
+anything is checked. `authorize()` runs right after; return `False` to turn the whole request
+into a 403, before Pydantic even looks at the fields:
+
+```python
+class LoginRequest(FormRequest):
+    email: EmailStr
+    password: str
+
+    def prepare_for_validation(self) -> None:
+        self.merge({"email": (self.input("email") or "").lower()})
+```
+
+## Web routes redirect; `routes/api.py` returns 422
+
+A failed `FormRequest` always raises the same `ValidationException` — what happens next
+depends on which group the route is in. A `routes/web.py` route redirects back with the
+errors in the session (which is what the error-reading side of `<Form>`/`useForm` expects); a
+`routes/api.py` route gets a `422` with a JSON body instead, since there's no "back" to redirect
+to for a stateless API call.
+
+```json
+{"message": "The given data was invalid.", "errors": {"title": ["This field is required."]}}
+```
+
+## Old input
+
+A failed web submission flashes the original input to the session. Read it back with
+`old()` if you're not using `<Form>`'s own state (which already remembers what the user typed):
+
+```python
+from aso.validation import old
+
+default_title = old("title", "")
+```
+
+## File uploads
+
+Type a field `UploadedFile`, attach `File`/`Image` for size and type limits, then `store()` it
+through [file storage](/docs/queues-mail-cache#storage):
+
+```python
+from typing import Annotated
+
+from aso.validation import File, UploadedFile
+from aso.http import FormRequest
+
+
+class UploadAvatarRequest(FormRequest):
+    avatar: Annotated[UploadedFile, File(max_kb=2048, mimes=["jpg", "png"])]
+```
+
+```python
+async def store(self, form: UploadAvatarRequest):
+    path = await form.validated("avatar").store("avatars")
+```
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `public function rules()` | Pydantic field types + `Field(...)` |
+| `'email' => 'required\|unique:users,email'` | `Annotated[EmailStr, Unique("users", "email")]` |
+| `$request->validated()` | `form.validated()` |
+| `public function messages()` | `def messages(self)` |
+| `public function authorize()` | `async def authorize(self)` |
+| `old('title')` | `old("title")` |
+| 422 always | 422 only from `routes/api.py`; web redirects back |
+
+## Gotchas
+
+- A route handler never returns 422 from `routes/web.py` on its own — that only happens for
+  `routes/api.py`. If you see a 422 where you expected a redirect, check which file the route
+  is registered in.
+- `validated()` only contains declared fields. `user_id=auth().id()` (or any value the
+  controller itself decides) is passed as a separate keyword, not through the form.
+- `Rule` subclasses run one at a time, in field declaration order, and only for fields that
+  already passed Pydantic — a field that's already failed doesn't also get its `Unique` check
+  run.
+- Table/column names passed to `Unique`/`Exists` must be plain identifiers; there's no way (and
+  no need) to parameterize them from user input.
+- `messages()` keys use the Laravel rule name (`"title.min"`, `"title.required"`), not
+  Pydantic's internal error type (`string_too_short`) — the same `min` key covers both
+  `min_length` on a string and a numeric lower bound.

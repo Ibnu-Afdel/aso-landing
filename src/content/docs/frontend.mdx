@@ -1,0 +1,159 @@
+---
+title: Frontend and typed routes
+description: routes:generate, <Form>, useForm, router, and where components live.
+section: Core concepts
+order: 24
+---
+
+The frontend is a normal Vite + React 19 app; Inertia is the only thing connecting it to your
+Python routes. The one Aso-specific piece is `aso routes:generate`, which turns your Python
+route definitions into typed TypeScript you import instead of writing URLs by hand.
+
+## Generating typed routes
+
+```bash
+aso routes:generate --with-form
+```
+
+```
+Wrote 24 file(s), 24 changed.
+```
+
+This writes two trees under `resources/js/`, both regenerated from scratch on every run (and
+listed in `.gitignore` — don't edit them):
+
+- `resources/js/routes/` — one file per named route's first segment before a dot
+  (`todos.index`/`todos.store`/... → `routes/todos/index.ts`), exporting a function per action
+  that returns `{ url, method }`.
+- `resources/js/actions/` — mirrors your controller's module path
+  (`app/http/controllers/todo_controller.py` → `actions/app/http/controllers/todo_controller.ts`),
+  exporting one named helper per controller method with `.url()` and (with `--with-form`)
+  `.form()`.
+
+```bash
+aso routes:generate --watch   # regenerate on every change under routes/ and app/http/controllers/
+```
+
+`--skip-actions`/`--skip-routes` write only one of the two trees, if you don't need both.
+
+## Calling a route
+
+```tsx
+import { index } from "@/routes/todos";
+import TodoController from "@/actions/app/http/controllers/todo_controller";
+
+index();                              // "/todos"
+TodoController.show.url(post.id);     // "/todos/5" — fills in {todo}
+TodoController.show.url({ todo: 5 }); // same, by name
+```
+
+Rename a route in Python, or change its parameter, and every TypeScript caller shows a
+compiler error — not a 404 discovered at runtime.
+
+## `<Form>`
+
+Inertia's `<Form>` is the default way to submit anything. Spread a generated action's
+`.form()` onto it and it already knows the URL and HTTP method:
+
+```tsx
+import { Form } from "@inertiajs/react";
+import TodoController from "@/actions/app/http/controllers/todo_controller";
+
+<Form {...TodoController.store.form()} resetOnSuccess className="flex gap-2">
+    {({ errors, processing }) => (
+        <>
+            <input name="title" />
+            <button type="submit" disabled={processing}>Add</button>
+            {errors.title && <span>{errors.title}</span>}
+        </>
+    )}
+</Form>
+```
+
+`errors` only has keys the server actually rejected; `processing` is true while the request is
+in flight. `resetOnSuccess` clears inputs after a successful submit; `resetOnError={[...]}`
+clears specific fields after a failure (useful for password fields).
+
+## `useForm`
+
+`<Form>` covers most cases. Reach for `useForm` when you need the form's state outside the
+render-prop — for example, to prefill it from props, or to call `.submit()` from somewhere
+other than a `<form>` element:
+
+```tsx
+import { useForm } from "@inertiajs/react";
+import TodoController from "@/actions/app/http/controllers/todo_controller";
+
+const form = useForm({ title: "", done: false });
+
+function submit() {
+    form.submit(TodoController.store.url(), { onSuccess: () => form.reset() });
+}
+```
+
+## `router`
+
+For actions with no form at all — a checkbox toggle, a delete button — call `router` directly
+with a generated URL:
+
+```tsx
+import { router } from "@inertiajs/react";
+import TodoController from "@/actions/app/http/controllers/todo_controller";
+
+router.patch(TodoController.update.url(todo.id), { title: todo.title, done: !todo.done });
+router.delete(TodoController.destroy.url(todo.id));
+```
+
+Aso issues the real HTTP verb over `fetch` — there's no method-spoofing hidden field to add for
+`PUT`/`PATCH`/`DELETE`.
+
+## Links
+
+A plain `<Link>` (or an anchor with `router.visit`) takes a generated URL the same way:
+
+```tsx
+import { Link } from "@inertiajs/react";
+import { show } from "@/routes/posts";
+
+<Link href={show(post.id)}>{post.title}</Link>
+```
+
+Never hard-code a path like `href="/posts/5"` — it won't survive a renamed route, and nothing
+will tell you it broke.
+
+## Vite and the dev server
+
+`aso dev` runs the Python server and the Vite dev server together and prints both URLs. Open
+the **app** URL, not the Vite one — Vite only serves assets; the app itself is the Python
+server reading them through `@inertiajs/vite`'s tags in `resources/views/app.html`.
+
+## Where components live
+
+- `resources/js/pages/` — one file per Inertia page, matching the dotted component name
+  (`"todos/index"` → `pages/todos/index.tsx`).
+- `resources/js/components/` — your own shared components.
+- `resources/js/components/ui/` — generated, shadcn-style primitives (`button.tsx`,
+  `input.tsx`, `dialog.tsx`, ...), installed with the shadcn CLI against `components.json`,
+  which a new Aso app ships pre-configured (style `new-york`, base color `neutral`, icons from
+  `lucide-react`).
+- `resources/js/layouts/` — the layouts `createInertiaApp`'s `layout` option picks by page
+  name prefix (`"auth/"`, `"settings/"`); a page never wraps itself in one.
+
+## Coming from Laravel
+
+| Laravel (Inertia) | Aso |
+|---|---|
+| Laravel Wayfinder | `aso routes:generate` (built in, no separate package) |
+| `route('posts.show', $post)` in Blade | `show(post.id)` from `@/routes/posts` |
+| `<Form action={store()}>` | `<Form {...PostController.store.form()}>` |
+| `router.visit(route(...))` | `router.visit(show(post.id))` |
+| `php artisan shadcn:add button` (community) | `pnpm dlx shadcn@latest add button` |
+
+## Gotchas
+
+- Generated files under `routes/` and `actions/` are rewritten wholesale on every run — never
+  hand-edit them, and don't worry about merge conflicts in them (they're gitignored).
+- `.form()` only exists if you generated with `--with-form`; without it, a plain `.url()` is
+  still there, so `<Form action={X.url()} method="post">` still works.
+- A route's TypeScript name comes from its Laravel-style dotted route name, not the controller
+  method name — `todos.index` generates `index`, grouped under `routes/todos/`.

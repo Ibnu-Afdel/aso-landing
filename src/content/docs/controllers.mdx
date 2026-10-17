@@ -1,0 +1,142 @@
+---
+title: Controllers
+description: What a controller method can take, what it can return, and the auth() helper.
+section: Core concepts
+order: 21
+---
+
+A controller is a plain class — no base-class magic beyond `Controller` itself, and a fresh
+instance is created for every request, so there's no shared state to worry about between
+requests.
+
+<CodeFile name="app/http/controllers/post_controller.py">
+```python
+from aso.http import Controller
+from aso.inertia import inertia
+
+from app.models.post import Post
+
+
+class PostController(Controller):
+    async def index(self):
+        posts = await Post.latest().get()
+        return inertia("posts/index", {"posts": posts})
+```
+</CodeFile>
+
+## What a method can take
+
+Route parameters, `FormRequest`s, and the request object are all resolved by annotation — the
+route compiler inspects each parameter's type hint once, at startup, and raises immediately if
+it can't match one (not on the first real request):
+
+```python
+class PostController(Controller):
+    async def show(self, post: Post):
+        # {post} in the route -> Post.find_or_fail(id), or a 404 before this line runs
+        ...
+
+    async def store(self, form: StorePostRequest):
+        # the request body, validated; form.validated() is the declared, clean data
+        ...
+
+    async def update(self, form: UpdatePostRequest, post: Post):
+        # both at once, in any order
+        ...
+
+    async def index(self, request: Request):
+        # the raw Starlette-based request, when you need query params, headers, or cookies
+        page = request.query("page", default=1)
+        ...
+```
+
+A plain scalar path parameter (no `Model`/`FormRequest` annotation) arrives as whatever type
+you declare — `int` or `str` — matched against the route's `{name}` segment.
+
+## What a method can return
+
+- `inertia(component, props)` — a React page, the normal case for `routes/web.py`.
+- `redirect().route(name, ...)`, `redirect(url)`, `back()` — after a write.
+- `response().json(data)` — plain JSON, mostly for `routes/api.py`.
+- A `Response` subclass directly (`FileResponse`, a streaming response) for anything else.
+
+```python
+async def store(self, form: StorePostRequest):
+    post = await Post.create(**form.validated())
+    return redirect().route("posts.show", post.id).with_flash("success", "Post created.")
+```
+
+Leave the return type unannotated, or annotate it `Response` — don't write `-> inertia` or
+`-> redirect`; neither is a real type.
+
+## The `auth()` helper
+
+`auth()` works anywhere, not just in a controller — it reads the signed-in user from the
+current request's context, set once by the `auth` session middleware:
+
+```python
+from aso.auth import auth
+
+class PostController(Controller):
+    async def store(self, form: StorePostRequest):
+        await Post.create(**form.validated(), user_id=auth().id())
+```
+
+`auth().user()` is the full `User` instance (or `None`); `auth().id()` is a shortcut for
+`auth().user().id` that stays `None` for a guest instead of raising. `auth().check()` and
+`auth().guest()` are the two boolean questions. All four are synchronous — the user was
+already loaded for this request, so there's no `await` here. See
+[Authentication](/docs/authentication) for `attempt()`, `login()`, and `logout()`, which are
+async because they touch the database or the session.
+
+## Authorizing inside a controller
+
+Every controller has `self.authorize(ability, model)`, which raises a 403
+(`AuthorizationException`) instead of returning a boolean — call it and move on, there's
+nothing to check afterward:
+
+```python
+async def update(self, form: UpdatePostRequest, post: Post):
+    await self.authorize("update", post)
+    await post.update(**form.validated())
+    return redirect().route("posts.index").with_flash("success", "Post updated.")
+```
+
+See [Authorization](/docs/authorization) for how the policy backing `"update"` is found.
+
+## Controller middleware
+
+A controller can declare its own middleware instead of (or in addition to) the route's, as a
+static method returning a list:
+
+```python
+from aso.http import Controller, ControllerMiddleware
+
+class PostController(Controller):
+    @staticmethod
+    def middleware() -> list:
+        return [ControllerMiddleware("auth", except_=["index", "show"])]
+```
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `__construct(Request $request)` injected | `async def method(self, request: Request)` per-method |
+| Form request type-hint | `async def store(self, form: StorePostRequest)` |
+| Implicit route-model binding | `async def show(self, post: Post)` |
+| `$this->authorize('update', $post)` | `await self.authorize("update", post)` |
+| `auth()->id()` | `auth().id()` |
+| `return redirect()->route(...)` | `return redirect().route(...)` |
+| Resource controller base methods | Define `index`/`store`/`show`/`edit`/`update`/`destroy` directly |
+
+## Gotchas
+
+- A controller method must be `async def`, even if it never awaits anything.
+- Don't read `await request.json()` or `request.form()` in a controller — take a `FormRequest`
+  parameter instead (architecture rule A3). Raw input reads are reserved for middleware and
+  the framework itself.
+- A `Model`-typed parameter must have a matching `{name}` segment in the route; otherwise the
+  app fails to start with a clear error, not a runtime surprise.
+- Returning `inertia(...)` after a write (inside `store`/`update`/`destroy`) works, but means
+  the browser's URL bar won't change and a refresh resubmits the form. Redirect instead.

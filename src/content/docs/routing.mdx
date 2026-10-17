@@ -1,0 +1,167 @@
+---
+title: Routing
+description: Registering routes, groups, resources, route parameters, and the route() helper.
+section: Core concepts
+order: 20
+---
+
+Routes live in `routes/web.py` (session, CSRF, Inertia) and `routes/api.py` (stateless JSON,
+prefixed `/api`). Both files only *record* routes when they're imported — nothing touches
+FastAPI until the app compiles them at startup, so the order you call `Route.get(...)` in
+doesn't matter as much as it would with a live router.
+
+## Registering a route
+
+Every HTTP verb has a matching method. The second argument is `[Controller, "method"]`:
+
+<CodeFile name="routes/web.py">
+```python
+from aso.routing import Route
+
+from app.http.controllers.post_controller import PostController
+
+Route.get("/posts", [PostController, "index"]).name("posts.index")
+Route.post("/posts", [PostController, "store"]).name("posts.store")
+Route.get("/posts/{post}", [PostController, "show"]).name("posts.show")
+```
+</CodeFile>
+
+`Route.put`, `.patch`, `.delete`, and `.options` work the same way. `Route.get` also matches
+`HEAD`. `.name(...)` registers the name used by the `route()` helper and `redirect().route(...)`
+— give every route one, since there's no way to build a URL from an unnamed route.
+
+## Resources
+
+`Route.resource("posts", PostController)` registers all seven RESTful routes at once:
+`index`, `create`, `store`, `show`, `edit`, `update`, `destroy`. A resource controller only
+needs to define the methods it uses — a missing method is simply skipped, not an error.
+
+```python
+Route.resource("posts", PostController)
+Route.resource("todos", TodoController).only("index", "store", "update", "destroy")
+Route.api_resource("posts", PostController)  # same, minus create/edit (no HTML forms in an API)
+```
+
+`.except_("destroy")` is the opposite of `.only(...)`. Both return the same registration object,
+so you can chain `.middleware(...)` onto a whole resource:
+
+```python
+Route.resource("posts", PostController).middleware("auth")
+```
+
+## Groups
+
+`Route.middleware(...)`, `.prefix(...)`, and `.name(...)` return a group you open with a
+`with ... .group():` block. Everything registered inside inherits the group's middleware,
+path prefix, and name prefix:
+
+<CodeFile name="routes/web.py">
+```python
+with Route.middleware("auth", "verified").group():
+    Route.get("/dashboard", [DashboardController, "show"]).name("dashboard")
+    Route.resource("todos", TodoController).only("index", "store", "update", "destroy")
+```
+</CodeFile>
+
+Groups nest and combine: a `.prefix("admin")` group inside a `.middleware("auth")` group gets
+both. `Route.controller(PostController).group()` lets every route inside the block pass a bare
+method name instead of `[PostController, "method"]`:
+
+```python
+with Route.controller(PostController).group():
+    Route.get("/posts", "index").name("posts.index")
+    Route.post("/posts", "store").name("posts.store")
+```
+
+## Route parameters and route-model binding
+
+A `{name}` segment becomes a parameter. Type it as a plain scalar and you get the raw string
+(or `int`, if you annotate `int`); type it as a `Model` subclass and Aso loads it for you —
+a missing row is a 404 before your method body runs, not a `None` you have to check:
+
+```python
+Route.get("/posts/{post}", [PostController, "show"]).name("posts.show")
+```
+
+```python
+class PostController(Controller):
+    async def show(self, post: Post):  # {post} -> Post.find_or_fail(post_id), or 404
+        return inertia("posts/show", {"post": post})
+```
+
+Route-model binding matches the primary key by default. Bind on a different column with
+`.where("post", "slug")` on the definition, or give the model a custom lookup by overriding
+`find()`. `.where_number("post")` and `.where_uuid("post")` constrain the path segment's
+pattern without changing what gets injected.
+
+## Splitting routes across files
+
+`routes/web.py` only loads what it explicitly includes. `Route.include("routes/auth.py")` runs
+another file in place, inheriting any group currently open — this is how the starter kit keeps
+authentication and settings routes out of `web.py` itself:
+
+<CodeFile name="routes/web.py">
+```python
+Route.include("routes/auth.py")
+Route.include("routes/settings.py")
+```
+</CodeFile>
+
+## The `route()` URL helper
+
+Build a URL from a route's name instead of writing the path by hand — rename the route and
+every caller still resolves:
+
+```python
+from aso.routing import route
+
+route("posts.show", post.id)          # "/posts/5"
+route("posts.show", {"post": post.id})
+route("posts.index", page=2)           # extra kwargs become a query string: "/posts?page=2"
+```
+
+`redirect().route(name, ...)` takes the same arguments. On the frontend, the generated
+TypeScript helpers (see [Frontend](/docs/frontend)) do the equivalent job for `<Form>` and
+`router` calls.
+
+## Seeing what's registered
+
+```bash
+aso route:list
+```
+
+```
+┃ Method    ┃ URI           ┃ Name          ┃ Action                  ┃ Middleware    ┃
+│ GET|HEAD  │ /todos        │ todos.index   │ app.http.cont…          │ auth,         │
+│           │               │               │                         │ verified      │
+│ POST      │ /todos        │ todos.store   │ app.http.cont…          │ auth,         │
+│           │               │               │                         │ verified      │
+│ PUT|PATCH │ /todos/{todo} │ todos.update  │ app.http.cont…          │ auth,         │
+│           │               │               │                         │ verified      │
+```
+
+Every row is read straight from the registered routes — there's nothing here that isn't also
+true in the running app.
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `Route::get('/posts', [PostController::class, 'index'])->name(...)` | `Route.get("/posts", [PostController, "index"]).name(...)` |
+| `Route::middleware('auth')->group(fn () => ...)` | `with Route.middleware("auth").group(): ...` |
+| `Route::resource('posts', PostController::class)` | `Route.resource("posts", PostController)` |
+| `Route::apiResource(...)` | `Route.api_resource(...)` |
+| `route('posts.show', $post)` | `route("posts.show", post.id)` |
+| `php artisan route:list` | `aso route:list` |
+| `Route::model(...)` implicit binding | Any `Model`-typed parameter, automatically |
+
+## Gotchas
+
+- A route handler must be `async def` — the compiler raises at startup if it isn't, so this
+  fails fast rather than at request time.
+- A bare string action (`"index"`) only works inside `Route.controller(X).group()`; outside
+  one, pass `[Controller, "method"]`.
+- `routes/api.py` routes are prefixed with `/api` automatically — don't write the prefix
+  yourself in the path.
+- Resource route names use the plural you passed to `Route.resource(...)`, not the controller's
+  class name (`todos.index`, not `TodoController.index`).

@@ -1,0 +1,137 @@
+---
+title: Middleware
+description: Groups, route-middleware aliases, CSRF, rate limiting, and writing your own.
+section: Core concepts
+order: 25
+---
+
+Middleware wraps a request/response pair. Aso runs three layers around every route, outermost
+first: global middleware (always on), the route's group (`web` or `api`), then whatever route
+middleware the route itself asks for.
+
+## Route-middleware aliases
+
+Attach one or more aliases to a route, or a whole group:
+
+```python
+Route.get("/dashboard", [DashboardController, "show"]).middleware("auth", "verified")
+
+with Route.middleware("auth", "verified").group():
+    Route.resource("todos", TodoController).only("index", "store", "update", "destroy")
+```
+
+The built-in aliases:
+
+| Alias | Does |
+|---|---|
+| `auth` | Redirects a guest to the login route (or returns 401 for an API request). |
+| `guest` | Redirects an *authenticated* user away — for login/register pages. |
+| `verified` | Requires a verified email, redirecting to the verification-notice page otherwise. |
+| `password.confirm` | Requires the password to have been re-confirmed recently. |
+| `signed` | Requires a valid signed-URL signature (`aso.routing.signed`). |
+| `can:ability` | A `Gate`-backed check, equivalent to calling `self.authorize(ability)` yourself. |
+| `throttle:60,1` | 60 attempts per 1 minute, keyed by user id or IP. |
+
+`throttle:<name>` refers to a named limiter instead of a raw count — register one with
+`RateLimiter.for_("api", lambda request: Limit.per_minute(60).by(request.client_ip()))` before
+using `.middleware("throttle:api")`.
+
+## Writing your own middleware
+
+```bash
+aso make:middleware HandleAppearance
+```
+
+Subclass `Middleware` and implement `handle(request, next)`. Call `await next(request)` to
+continue the chain — skip it to short-circuit and return your own response instead:
+
+<CodeFile name="app/http/middleware/handle_appearance.py">
+```python
+from aso.http import Middleware, Next, Request, Response
+from aso.inertia import share
+
+VALID = {"light", "dark", "system"}
+
+
+class HandleAppearance(Middleware):
+    async def handle(self, request: Request, next: Next) -> Response:
+        value = request.cookie("appearance")
+        share("appearance", value if value in VALID else "system")
+        return await next(request)
+```
+</CodeFile>
+
+A route-middleware alias can take parameters after a colon — they arrive as extra positional
+strings:
+
+```python
+async def handle(self, request: Request, next: Next, *params: str) -> Response:
+    # .middleware("throttle:60,1") -> params == ("60", "1")
+    ...
+```
+
+## Registering middleware globally
+
+Add middleware to every request in a group from `bootstrap/app.py`, instead of attaching it to
+every route by hand:
+
+<CodeFile name="bootstrap/app.py">
+```python
+from aso.foundation import Application, MiddlewareConfig
+
+from app.http.middleware.handle_appearance import HandleAppearance
+from app.http.middleware.handle_inertia_requests import HandleInertiaRequests
+
+
+def middleware(m: MiddlewareConfig) -> None:
+    m.web(append=[HandleAppearance, HandleInertiaRequests])
+
+
+def create_app():
+    return (
+        Application.configure(base_path=__file__)
+        .with_routing(web="routes/web.py", api="routes/api.py")
+        .with_middleware(middleware)
+        .create()
+    )
+```
+</CodeFile>
+
+`m.web(...)`/`m.api(...)` take `append`, `prepend`, and `remove`. `m.alias({"old_method":
+SomeMiddleware})` registers your own route-middleware alias name. `m.group("custom", [...])`
+defines a named group that expands into several route middleware at once, the way `auth` or
+`verified` do.
+
+## CSRF
+
+`PreventRequestForgery` runs as part of the `web` group automatically — every state-changing
+request needs a valid token, which Inertia's client sends for you. `routes/api.py` has no
+session and no CSRF layer at all, since there's no cookie-based session to forge in the first
+place. Exempt specific paths (a webhook endpoint that posts to a web route, say) from
+`bootstrap/app.py`:
+
+```python
+def middleware(m: MiddlewareConfig) -> None:
+    m.prevent_request_forgery(except_=["/webhooks/*"])
+```
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `app/Http/Kernel.php` groups | `MiddlewareConfig` in `bootstrap/app.py` |
+| `Route::middleware('auth')` | `.middleware("auth")` |
+| `protected $except` on `VerifyCsrfToken` | `m.prevent_request_forgery(except_=[...])` |
+| A custom `Closure`-based middleware | `class X(Middleware): async def handle(self, request, next)` |
+| `throttle:60,1` | Same syntax, same meaning |
+
+## Gotchas
+
+- Don't subclass Starlette's `BaseHTTPMiddleware` — inherit from `aso.http.Middleware`
+  (architecture rule A8); the adapter around it is what makes `next(request)` work the way
+  Laravel middleware expects.
+- `routes/api.py` has no CSRF layer and no session — there's nothing to exempt there, and
+  `.middleware("auth")` on an API route checks the session cookie exactly the same way a web
+  route does, so pair it with your own token-based guard if you need stateless API auth.
+- Writing a `VerifyCsrfToken` subclass does nothing in Aso; CSRF is configured through
+  `MiddlewareConfig.prevent_request_forgery(...)`, not a middleware class you extend.

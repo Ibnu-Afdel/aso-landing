@@ -1,0 +1,161 @@
+---
+title: Inertia responses
+description: Props, serialization, shared data, flash, optional/deferred props, and layouts.
+section: Core concepts
+order: 23
+---
+
+`inertia(component, props)` renders a React page. It's lazy — nothing is evaluated until
+Starlette actually sends the response, which is why shared props, flash messages, and history
+flags set *after* the call still make it into the final page:
+
+```python
+from aso.inertia import inertia
+
+return inertia("posts/index", {"posts": posts})
+```
+
+`component` is a lowercase path matching a file under `resources/js/pages/` — `"posts/index"`
+maps to `resources/js/pages/posts/index.tsx`. In `local`/`testing` environments, a missing page
+file raises `PageNotFound` immediately, with the path it looked for, instead of a blank screen.
+
+## Serialization
+
+A prop value is converted to JSON automatically, recursively:
+
+- A `Model` instance (or a list of them) calls its own `to_dict()` — columns minus
+  `__hidden__`, plus any eagerly loaded relationships.
+- A paginator (`.paginate()`, see [Models](/docs/models)) calls its own `to_dict()`, matching
+  Laravel's paginator JSON shape (`data`, `links`, `current_page`, `total`, ...).
+- A Pydantic model calls `model_dump(mode="json")`.
+- `datetime`/`date` become ISO 8601 strings, `Decimal` a string, `UUID` a string, `Enum` its
+  value.
+
+You rarely need to serialize anything by hand — pass the model or the paginator straight
+through.
+
+## Shared data
+
+`HandleInertiaRequests` (a subclass of `InertiaMiddleware` your app registers in
+`bootstrap/app.py`) returns data that's merged onto every page's props, under whatever the
+controller passes:
+
+<CodeFile name="app/http/middleware/handle_inertia_requests.py">
+```python
+from aso.config import config
+from aso.http import Request
+from aso.inertia import InertiaMiddleware
+
+
+class HandleInertiaRequests(InertiaMiddleware):
+    root_view = "app.html"
+
+    async def share(self, request: Request) -> dict:
+        return {
+            **await super().share(request),
+            "name": config("app.name"),
+            "auth": {"user": request.user()},
+        }
+```
+</CodeFile>
+
+Always start an override with `**await super().share(request)`. On the frontend, read shared
+data with `usePage().props.auth.user`.
+
+From anywhere else in the request — a different middleware, a service — add a prop without
+touching `HandleInertiaRequests` at all:
+
+```python
+from aso.inertia import share
+
+share("appearance", request.cookie("appearance", "system"))
+```
+
+## Flash messages
+
+`redirect().with_flash("success", "Todo added.")` puts a message on the session for the next
+request; `inertia(...).with_flash(...)` does the same for a response that renders instead of
+redirecting. Either way, the frontend reads it from `usePage().props.flash`:
+
+```python
+return redirect().route("todos.index").with_flash("success", "Todo added.")
+```
+
+```tsx
+const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
+```
+
+A flash key survives exactly one follow-up render, then disappears — you don't clear it
+yourself.
+
+## Optional, deferred, and merge props
+
+Most props resolve on every visit. A few modifiers change that, for props that are expensive
+or secondary:
+
+```python
+from aso.inertia import always, defer, inertia, merge, optional
+
+return inertia("dashboard", {
+    "stats": await compute_stats(),                   # always resolved
+    "recent_activity": defer(load_recent_activity),    # fetched after the first paint
+    "export_status": optional(check_export_status),    # only on a partial reload that asks for it
+    "notifications": merge(load_notifications),        # a partial reload appends instead of replacing
+})
+```
+
+- `defer(fn)` leaves a prop out of the first response; the client requests it in an automatic
+  follow-up partial reload. Group related deferred props with `defer(fn, group="sidebar")` so
+  they load together.
+- `optional(fn)` never resolves on a full visit — only when a partial reload explicitly asks
+  for that key by name.
+- `always(fn)` resolves even on a partial reload that didn't ask for it (errors are `always` by
+  default, for example).
+- `merge(fn)` / `deep_merge(fn)` tell the client to append to the existing prop instead of
+  replacing it, useful for infinite-scroll-style lists.
+
+Each wraps a plain callable — the function only actually runs if the prop is selected.
+
+## Layouts and breadcrumbs
+
+A page doesn't wrap itself in a shared layout component; the layout is applied by
+`createInertiaApp` once for the whole app. Set `.layout` on the page component to pass data
+into it, such as the breadcrumb trail:
+
+```tsx
+export default function PostsIndex({ posts }: { posts: Post[] }) {
+    return <ul>{posts.map((p) => <li key={p.id}>{p.title}</li>)}</ul>;
+}
+
+PostsIndex.layout = {
+    breadcrumbs: [{ title: "Posts", href: index() }],
+};
+```
+
+## Error pages
+
+A thrown exception that isn't a validation error renders through the same Inertia pipeline as
+any other page (an `errors/{status}` component, if your app has one) instead of a raw HTML
+error page — so a 403 or 404 still looks like your app, not a server's default error page.
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `Inertia::render('posts/index', [...])` | `inertia("posts/index", {...})` |
+| `Inertia::share(...)` in a service provider | `share(...)`, or override `HandleInertiaRequests.share()` |
+| `Inertia::lazy(...)` | `optional(...)` (the v3 name; `lazy` was removed) |
+| `->with('success', ...)` | `.with_flash("success", ...)` |
+| `Inertia::defer(...)` | `defer(...)` |
+| `Inertia::merge(...)` | `merge(...)` |
+
+## Gotchas
+
+- Page names are lowercase paths (`"posts/index"`), not `"Posts/Index"` — they map directly to
+  the file layout under `resources/js/pages/`.
+- Flash is read from `usePage().props.flash`, not from `share()` — don't add `flash` to
+  `HandleInertiaRequests.share()` yourself; it's wired in already.
+- `optional`/`defer`/`merge` wrap a *callable*, not an already-computed value — pass the
+  function itself (`defer(load_recent_activity)`), not its result.
+- Returning `inertia(...)` directly from a `store`/`update`/`destroy` action works, but skips
+  the redirect a browser refresh needs — prefer `redirect().with_flash(...)` after a write.
