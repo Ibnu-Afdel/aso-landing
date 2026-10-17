@@ -61,16 +61,18 @@ No serializers, no API client, and no separate frontend repo to keep in sync.
 
 ## What's in the box
 
-- **Routing** with named routes, middleware groups, and resource routes.
-- **An async ORM** on SQLAlchemy 2: models, relationships, scopes, eager loading, pagination.
-- **Auth** from the first run: registration, login, password reset, email verification.
-- **Validation** through Pydantic-backed `FormRequest` classes.
-- **Queues, mail, cache, and storage**, with one small API for each.
-- **An artisan-style CLI** (`aso make:model`, `aso migrate`, `aso routes:generate`, ...).
-- **Typed routes**: your Python routes become typed TypeScript helpers, so renaming a route is
-  a compile error in your frontend, not a 404 in production.
-- **Architecture tests** that fail the build if a controller imports SQLAlchemy directly or a
-  model reaches into HTTP code.
+- [**Routing**](/docs/routing) with named routes, middleware groups, and resource routes.
+- [**An async ORM**](/docs/models) on SQLAlchemy 2: models, [relationships](/docs/relationships),
+  scopes, eager loading, pagination.
+- [**Auth**](/docs/authentication) from the first run: registration, login, password reset,
+  email verification.
+- [**Validation**](/docs/validation) through Pydantic-backed `FormRequest` classes.
+- [**Queues, mail, cache, and storage**](/docs/queues-mail-cache), with one small API for each.
+- [**An artisan-style CLI**](/docs/cli) (`aso make:model`, `aso migrate`, `aso routes:generate`, ...).
+- [**Typed routes**](/docs/frontend): your Python routes become typed TypeScript helpers, so
+  renaming a route is a compile error in your frontend, not a 404 in production.
+- [**Architecture tests**](/docs/architecture) that fail the build if a controller imports
+  SQLAlchemy directly or a model reaches into HTTP code.
 
 ## What it isn't
 

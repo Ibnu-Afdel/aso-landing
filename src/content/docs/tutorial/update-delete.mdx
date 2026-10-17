@@ -78,7 +78,10 @@ generated helper accepts the id directly, or `{ todo: id }`, or `{ id }`.
 
 ## What you used
 
-- Route-model binding — a typed `Todo` parameter, resolved from the URL.
-- `todo.update(**form.validated())` — update an existing row with validated data.
+- Route-model binding — a typed `Todo` parameter, resolved from the URL. More in
+  [Routing](/docs/routing).
+- `todo.update(**form.validated())` — update an existing row with validated data. More in
+  [Models and queries](/docs/models).
 - `router.patch()` / `router.delete()` — imperative Inertia requests outside of `<Form>`.
-- `Controller.action.url(id)` — a generated helper that fills in route parameters.
+- `Controller.action.url(id)` — a generated helper that fills in route parameters. More in
+  [Frontend and typed routes](/docs/frontend).

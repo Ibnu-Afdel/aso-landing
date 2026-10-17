@@ -78,7 +78,9 @@ Aso turns into an HTTP 403 before your method's next line runs.
 
 ## What you used
 
-- `has_many("Todo")` — the inverse side of `belongs_to`.
-- `Todo.where(Todo.user_id == auth().id())` — scoping a list query to the current user.
-- `aso make:policy --model=` — a policy found by the model-to-policy naming convention.
+- `has_many("Todo")` — the inverse side of `belongs_to`. More in [Relationships](/docs/relationships).
+- `Todo.where(Todo.user_id == auth().id())` — scoping a list query to the current user. More
+  on `auth()` in [Authentication](/docs/authentication).
+- `aso make:policy --model=` — a policy found by the model-to-policy naming convention. More in
+  [Authorization](/docs/authorization).
 - `self.authorize(ability, model)` — a 403 on denial, nothing on success.
