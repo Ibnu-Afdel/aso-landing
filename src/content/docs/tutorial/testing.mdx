@@ -1,0 +1,99 @@
+---
+title: Testing
+description: Feature tests with the client fixture, and where to go next.
+section: "Tutorial: a todo app"
+order: 9
+---
+
+## The `client` fixture
+
+Every Aso app's `tests/conftest.py` loads a pytest plugin that provides a `client` fixture (an
+HTTP client that understands Inertia responses) and a `user` fixture, and wraps each test in
+its own rolled-back database transaction — nothing you create in one test leaks into the next.
+
+<CodeFile name="tests/feature/test_todos.py">
+```python
+from aso.testing import TestClient, assert_database_has, assert_database_missing
+
+from app.models.todo import Todo
+from database.factories.user_factory import UserFactory
+
+
+async def test_guests_are_redirected_to_login(client: TestClient) -> None:
+    response = await client.get("/todos")
+    response.assert_redirect_to_route("login")
+
+
+async def test_todos_index_only_shows_the_users_own_todos(client: TestClient, user) -> None:
+    other = await UserFactory.new().create()
+    mine = await Todo.create(title="Buy milk", done=False, user_id=user.id)
+    await Todo.create(title="Not mine", done=False, user_id=other.id)
+
+    response = await client.acting_as(user).get("/todos")
+
+    response.assert_ok()
+    response.assert_inertia(
+        lambda page: page.component("todos/index").has("todos", 1).where("todos.0.title", "Buy milk")
+    )
+```
+</CodeFile>
+
+`client.acting_as(user)` signs a user in for that request, without going through the login
+form. `response.assert_inertia(...)` hands you the page object: `.component(...)` checks which
+page rendered, `.has(key, count)` checks a prop's length, and `.where("todos.0.title", ...)`
+reaches into the first item with a dotted path.
+
+## Asserting validation
+
+```python
+async def test_creating_a_todo_requires_a_title(client: TestClient, user) -> None:
+    response = await client.acting_as(user).from_url("/todos").post("/todos", json={"title": ""})
+
+    response.assert_session_has_errors(["title"])
+```
+
+`from_url(...)` sets the request's "came from" URL, matching what a real redirect-back needs.
+Web routes redirect with errors in the session rather than returning a 422 — this is the
+assertion that checks for that.
+
+## Asserting the policy
+
+```python
+async def test_a_user_cannot_update_someone_elses_todo(client: TestClient, user) -> None:
+    other = await UserFactory.new().create()
+    todo = await Todo.create(title="Not yours", done=False, user_id=other.id)
+
+    response = await client.acting_as(user).put(f"/todos/{todo.id}", json={"title": "Hacked", "done": False})
+
+    response.assert_forbidden()
+```
+
+## Running the suite
+
+```bash
+uv run pytest
+```
+
+```
+36 passed in 11.33s
+```
+
+`aso test` wraps the same `pytest` invocation with convenience flags —
+`--filter` (`-k`), `--parallel` (`-n auto`), `--coverage`, and `--bail` (`-x`) — so
+`aso test --filter test_todos` runs just this file.
+
+## Architecture tests run too
+
+`tests/architecture/test_architecture.py` runs `arch_preset("aso").check()` in the same
+suite — the rules that keep SQLAlchemy out of controllers, raw request reads out of
+controllers, and every `inertia(...)` call pointed at a real page. You didn't write a line
+of it, but it checks the code in this tutorial along with everything else.
+
+## Where next
+
+You've built a model, a scoped list, validated create and update actions, a policy, and
+tests for all of it — the shape of most features in an Aso app. From here:
+
+- Browse the source and file issues on [GitHub](https://github.com/Ibnu-Afdel/Aso).
+- Run `aso list` in any app to see every command this CLI has, including the ones this
+  tutorial didn't touch (queues, mail, scheduling, caching).

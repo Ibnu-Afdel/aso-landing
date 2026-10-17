@@ -1,0 +1,98 @@
+---
+title: Creating a todo
+description: A FormRequest, the store action, and an inline <Form>.
+section: "Tutorial: a todo app"
+order: 6
+---
+
+## The form request
+
+```bash
+aso make:request StoreTodoRequest
+```
+
+`FormRequest` fields are plain Pydantic fields — the request body is validated before your
+controller method ever runs:
+
+<CodeFile name="app/http/requests/store_todo_request.py">
+```python
+from pydantic import Field
+
+from aso.http import FormRequest
+
+
+class StoreTodoRequest(FormRequest):
+    title: str = Field(min_length=1, max_length=255)
+```
+</CodeFile>
+
+## The store action
+
+<CodeFile name="app/http/controllers/todo_controller.py">
+```python
+from aso.http import redirect
+
+from app.http.requests.store_todo_request import StoreTodoRequest
+
+class TodoController(Controller):
+    # ...index...
+
+    async def store(self, form: StoreTodoRequest):
+        await Todo.create(**form.validated(), user_id=auth().id(), done=False)
+        return redirect().route("todos.index").with_flash("success", "Todo added.")
+```
+</CodeFile>
+
+Type the parameter as your `FormRequest` subclass and Aso validates the body before calling
+the method — there's nothing to check manually. `form.validated()` returns only the declared
+fields, so `user_id` can't arrive from the request even though it's fillable on the model.
+Web routes never return a 422 on failed validation; they redirect back with the errors in the
+session, which is what the `<Form>` component below reads.
+
+## The `<Form>` component
+
+Inertia's `<Form>` posts to the action's URL, keeps your inputs' names, and exposes `errors`
+and `processing` to its render function:
+
+<CodeFile name="resources/js/pages/todos/index.tsx">
+```tsx
+import { Form } from "@inertiajs/react";
+import TodoController from "@/actions/app/http/controllers/todo_controller";
+import InputError from "@/components/input-error";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+// inside TodosIndex:
+<Form {...TodoController.store.form()} resetOnSuccess className="flex gap-2">
+    {({ errors, processing }) => (
+        <div className="flex w-full flex-col gap-1">
+            <div className="flex gap-2">
+                <Input name="title" placeholder="Add a todo" autoComplete="off" />
+                <Button type="submit" disabled={processing}>Add</Button>
+            </div>
+            <InputError message={errors.title} />
+        </div>
+    )}
+</Form>
+```
+</CodeFile>
+
+`TodoController.store.form()` comes from the generated actions file (`aso routes:generate
+--with-form`, from the previous page) — it already knows the URL and the HTTP method, so
+there's nothing to hard-code. `resetOnSuccess` clears the input after a successful submit.
+`errors.title` is only set when the server rejects `title`; `InputError` renders nothing
+otherwise.
+
+## Flash messages
+
+`.with_flash("success", "Todo added.")` puts a message on the session for the next request.
+Aso's starter kit already wires a toast for it — `useFlashToast()` in `app.tsx` listens for
+`success`/`error` flash keys and shows a toast automatically. You don't need to read
+`usePage().props.flash` yourself unless you want different behavior.
+
+## What you used
+
+- `aso make:request` — a Pydantic-backed `FormRequest`.
+- `form.validated()` — the validated, declared-fields-only data.
+- `redirect().route(...).with_flash(...)` — redirect-with-flash instead of re-rendering.
+- `<Form {...Controller.action.form()}>` — a generated action wired straight into the form.

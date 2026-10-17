@@ -1,0 +1,102 @@
+---
+title: Only your own todos
+description: Scoping queries, the User relationship, and a policy for 403s.
+section: "Tutorial: a todo app"
+order: 8
+---
+
+Every todo route sits inside `Route.middleware("auth", "verified").group()` (from
+[Routes and the list page](/docs/tutorial/list)), so a guest never reaches these actions at
+all — they're redirected to `/login` first. That handles "signed in," but not "signed in as
+the right user." Two more things do that: scoping the query you already wrote, and a policy
+for actions that take an id from the URL.
+
+## The relationship
+
+<CodeFile name="app/models/user.py">
+```python
+from aso.database import has_many
+
+class User(MustVerifyEmail, Authenticatable, Model):
+    # ...
+
+    todos: Mapped[list["Todo"]] = has_many("Todo")
+```
+</CodeFile>
+
+With this declared, `user.todos` is available anywhere you have a `User` instance — a
+controller, a test, a factory state.
+
+## Scoping `index`
+
+`index` can only ever see the current user's rows, because the query filters on `user_id`:
+
+```python
+async def index(self):
+    todos = await Todo.where(Todo.user_id == auth().id()).latest().get()
+    return inertia("todos/index", {"todos": todos})
+```
+
+That's enough for a list — there's nothing to leak. It isn't enough for `update` and
+`destroy`: those take a `{todo}` id straight from the URL, and route-model binding will
+happily load *any* todo by id, not just the current user's.
+
+## A policy for update and delete
+
+```bash
+aso make:policy TodoPolicy --model=Todo
+```
+
+Policies are plain classes — no base class to import — found by convention from the model
+they guard:
+
+<CodeFile name="app/policies/todo_policy.py">
+```python
+from app.models.todo import Todo
+from app.models.user import User
+
+
+class TodoPolicy:
+    async def update(self, user: User, todo: Todo) -> bool:
+        return user.id == todo.user_id
+
+    async def delete(self, user: User, todo: Todo) -> bool:
+        return user.id == todo.user_id
+```
+</CodeFile>
+
+## Enforcing it in the controller
+
+Every `Controller` has an `authorize()` method that delegates to this policy. Call it before
+the write:
+
+<CodeFile name="app/http/controllers/todo_controller.py">
+```python
+async def update(self, form: UpdateTodoRequest, todo: Todo):
+    await self.authorize("update", todo)
+    await todo.update(**form.validated())
+    return redirect().route("todos.index").with_flash("success", "Todo updated.")
+
+async def destroy(self, todo: Todo):
+    await self.authorize("delete", todo)
+    await todo.delete()
+    return redirect().route("todos.index").with_flash("success", "Todo deleted.")
+```
+</CodeFile>
+
+If the policy method returns `False`, `authorize()` raises `AuthorizationException`, which
+Aso turns into an HTTP 403 before your method's next line runs. Nothing in the response
+reveals whether the todo exists — it just isn't yours.
+
+<Callout type="note">
+The user model and the `self.authorize()` method you just used both come from
+`aso.auth` — the convention that resolves `Todo` to `app/policies/todo_policy.py` is part of
+the framework, not something you register by hand.
+</Callout>
+
+## What you used
+
+- `has_many("Todo")` — the inverse side of `belongs_to`.
+- `Todo.where(Todo.user_id == auth().id())` — scoping a list query to the current user.
+- `aso make:policy --model=` — a policy found by the model-to-policy naming convention.
+- `self.authorize(ability, model)` — a 403 on denial, nothing on success.

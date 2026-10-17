@@ -1,0 +1,52 @@
+---
+title: "Tutorial: a todo app"
+description: What we're building and the finished file list.
+section: "Tutorial: a todo app"
+order: 3
+---
+
+This tutorial builds a small todo app: each signed-in user gets their own list. You'll add a
+todo, mark it done, edit its title, and delete it, with validation, flash messages, and
+authorization so nobody can touch someone else's todos. Every command and every file in this
+guide comes from a real app, built and tested with the steps you're about to follow.
+
+It assumes you've already run `uvx aso new myapp` and have a working app — see
+[Installation](/docs/installation) if you haven't.
+
+## What we build
+
+- A `Todo` model and its migration.
+- A `TodoController` with `index`, `store`, `update`, and `destroy`.
+- One Inertia page, `todos/index.tsx`, with an inline add form and an editable list.
+- A `TodoPolicy` so only the owner of a todo can update or delete it.
+- Feature tests that cover all of the above.
+
+## The finished files
+
+```
+app/
+├── http/
+│   ├── controllers/
+│   │   └── todo_controller.py
+│   └── requests/
+│       ├── store_todo_request.py
+│       └── update_todo_request.py
+├── models/
+│   └── todo.py
+└── policies/
+    └── todo_policy.py
+database/migrations/
+└── ..._create_todos_table.py
+resources/js/pages/todos/
+└── index.tsx
+routes/web.py          # one new line
+tests/feature/
+└── test_todos.py
+```
+
+Nine small steps, in order: model, list, create, update and delete, authorization, and
+testing.
+
+<Callout type="note">
+Each page ends with a short "What you used" list, linking back to the concepts it introduced.
+</Callout>

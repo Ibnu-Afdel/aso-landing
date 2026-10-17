@@ -1,0 +1,128 @@
+---
+title: Routes and the list page
+description: Register the resource route, scope the index query, and render the page.
+section: "Tutorial: a todo app"
+order: 5
+---
+
+## Register the route
+
+This todo app only needs four actions — `index`, `store`, `update`, `destroy` — so trim the
+resource route down with `.only()`, inside the same `auth` group the dashboard already uses:
+
+<CodeFile name="routes/web.py">
+```python
+from app.http.controllers.todo_controller import TodoController
+
+with Route.middleware("auth", "verified").group():
+    Route.get("/dashboard", [DashboardController, "show"]).name("dashboard")
+    Route.resource("todos", TodoController).only("index", "store", "update", "destroy")
+```
+</CodeFile>
+
+`aso route:list` shows what that registers:
+
+```
+GET|HEAD   /todos          todos.index     auth, verified
+POST       /todos          todos.store     auth, verified
+PUT|PATCH  /todos/{todo}   todos.update    auth, verified
+DELETE     /todos/{todo}   todos.destroy   auth, verified
+```
+
+## Scope the index to the current user
+
+<CodeFile name="app/http/controllers/todo_controller.py">
+```python
+from aso.auth import auth
+from aso.http import Controller
+from aso.inertia import inertia
+
+from app.models.todo import Todo
+
+
+class TodoController(Controller):
+    async def index(self):
+        todos = await Todo.where(Todo.user_id == auth().id()).latest().get()
+        return inertia("todos/index", {"todos": todos})
+```
+</CodeFile>
+
+`auth().id()` is the signed-in user's id — the `auth` middleware already guarantees there is
+one. `.where(...)` filters, `.latest()` orders by `created_at` descending.
+
+## Generate typed routes
+
+```bash
+aso routes:generate --with-form
+```
+
+```
+Wrote 24 file(s), 24 changed.
+```
+
+This writes `resources/js/routes/todos/index.ts` and
+`resources/js/actions/app/http/controllers/todo_controller.ts` — typed `index`, `store`,
+`update`, `destroy` helpers, each with a `.url()` and (because of `--with-form`) a `.form()`
+for the `<Form>` component. Import them instead of writing `"/todos"` by hand; rename a route
+in Python and every TypeScript caller shows a compiler error, not a 404.
+
+## The page
+
+<CodeFile name="resources/js/pages/todos/index.tsx">
+```tsx
+import { Head } from "@inertiajs/react";
+import { index } from "@/routes/todos";
+
+interface Todo {
+    id: number;
+    title: string;
+    done: boolean;
+}
+
+export default function TodosIndex({ todos }: { todos: Todo[] }) {
+    return (
+        <>
+            <Head title="Todos" />
+            <ul>
+                {todos.map((todo) => (
+                    <li key={todo.id}>{todo.title}</li>
+                ))}
+            </ul>
+        </>
+    );
+}
+
+TodosIndex.layout = {
+    breadcrumbs: [{ title: "Todos", href: index() }],
+};
+```
+</CodeFile>
+
+`todos/index` as a page name maps to `resources/js/pages/todos/index.tsx` — lowercase,
+matching the folder layout, not `Todos/Index`. Any page not under `auth/`, `settings/`, or the
+handful the app opts out of gets the shared `AppLayout` automatically, so you don't wrap the
+component yourself; setting `.layout.breadcrumbs` is enough to show up in the header.
+
+## Link it from the sidebar
+
+<CodeFile name="resources/js/components/app-sidebar.tsx">
+```tsx
+import { ListTodo } from "lucide-react";
+import { index as todos } from "@/routes/todos";
+
+const mainNavItems: NavItem[] = [
+    { title: "Dashboard", href: dashboard(), icon: LayoutGrid },
+    { title: "Todos", href: todos(), icon: ListTodo },
+];
+```
+</CodeFile>
+
+The create and edit forms come next — the page above gets its add/edit/delete UI once those
+exist.
+
+## What you used
+
+- `Route.resource(...).only(...)` — a trimmed resource route.
+- `auth().id()`, `Todo.where(...)` — scoping a query to the current user.
+- `aso routes:generate --with-form` — typed route and form helpers.
+- `Page.layout = { breadcrumbs }` — the shared layout's breadcrumb trail.

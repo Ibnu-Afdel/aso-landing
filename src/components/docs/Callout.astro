@@ -1,0 +1,24 @@
+---
+interface Props {
+  type?: 'note' | 'tip' | 'warning';
+}
+
+const { type = 'note' } = Astro.props;
+
+const labels: Record<string, string> = { note: 'Note', tip: 'Tip', warning: 'Warning' };
+const colors: Record<string, string> = {
+  note: 'var(--accent)',
+  tip: 'var(--accent)',
+  warning: '#b9975b',
+};
+---
+
+<div
+  class="not-prose my-6 rounded-xl border border-[var(--faint)] bg-[var(--raised)] px-4 py-3.5 text-sm leading-relaxed"
+  style={`border-left: 2px solid ${colors[type]};`}
+>
+  <p class="mb-1.5 font-mono text-xs tracking-wider uppercase" style={`color:${colors[type]}`}>{labels[type]}</p>
+  <div class="text-[var(--muted)] [&_a]:text-[var(--fg)] [&_code]:text-[var(--fg)] [&>:last-child]:mb-0 [&>p]:mb-2">
+    <slot />
+  </div>
+</div>

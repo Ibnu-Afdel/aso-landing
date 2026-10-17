@@ -1,0 +1,245 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Layout from './Layout.astro';
+import Mark from '../components/Mark.astro';
+import Wordmark from '../components/Wordmark.astro';
+import Callout from '../components/docs/Callout.astro';
+import Steps from '../components/docs/Steps.astro';
+import CodeFile from '../components/docs/CodeFile.astro';
+import DocsH2 from '../components/docs/DocsH2.astro';
+import DocsH3 from '../components/docs/DocsH3.astro';
+
+interface Props {
+  entry: CollectionEntry<'docs'>;
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+
+const all = (await getCollection('docs')).sort((a, b) => a.data.order - b.data.order);
+const sections = [...new Set(all.map((e) => e.data.section))];
+const currentIndex = all.findIndex((e) => e.id === entry.id);
+const prev = currentIndex > 0 ? all[currentIndex - 1] : null;
+const next = currentIndex < all.length - 1 ? all[currentIndex + 1] : null;
+
+function hrefFor(id: string): string {
+  const trimmed = id.replace(/\/index$/, '');
+  return trimmed === '' || trimmed === 'index' ? '/docs' : `/docs/${trimmed}`;
+}
+
+const currentHref = hrefFor(entry.id);
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+
+const github = 'https://github.com/Ibnu-Afdel/Aso';
+const components = {
+  Callout,
+  Steps,
+  CodeFile,
+  h2: DocsH2,
+  h3: DocsH3,
+};
+---
+
+<Layout title={`${entry.data.title} · Aso docs`} description={entry.data.description}>
+  <!-- Navigation (mirrors the home page header) -->
+  <header class="sticky top-0 z-40 border-b border-[var(--faint)] backdrop-blur-md">
+    <div class="absolute inset-0 -z-10 bg-[var(--bg)]/85"></div>
+    <nav class="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8" aria-label="Main">
+      <div class="flex items-center gap-6">
+        <a href="/" class="flex items-center gap-2.5" aria-label="Aso home">
+          <Mark class="size-7 text-[var(--fg)]" />
+          <Wordmark class="h-[18px] w-auto text-[var(--fg)]" />
+        </a>
+        <a href="/docs" class="text-sm font-medium text-[var(--fg)]">Docs</a>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="button" data-menu-toggle class="rounded-full border border-[var(--faint)] px-3.5 py-1.5 text-sm text-[var(--muted)] transition hover:text-[var(--fg)] lg:hidden">
+          Menu
+        </button>
+        <a href={github} class="hidden items-center gap-2 rounded-full bg-[var(--fg)] px-4 py-1.5 text-sm font-medium text-[var(--bg)] transition hover:opacity-85 sm:inline-flex">
+          GitHub
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <div class="mx-auto flex max-w-7xl gap-10 px-5 sm:px-8">
+    <!-- Sidebar -->
+    <aside data-sidebar class="hidden w-56 shrink-0 lg:block">
+      <nav class="sticky top-24 space-y-7 py-10 text-sm" aria-label="Docs navigation">
+        {sections.map((section) => (
+          <div>
+            <p class="mb-2 font-mono text-xs tracking-wider text-[var(--muted)] uppercase">{section}</p>
+            <ul class="space-y-1">
+              {all.filter((e) => e.data.section === section).map((e) => {
+                const href = hrefFor(e.id);
+                const active = href === currentHref;
+                return (
+                  <li>
+                    <a
+                      href={href}
+                      aria-current={active ? 'page' : undefined}
+                      class:list={[
+                        'block rounded-lg px-2.5 py-1.5 transition',
+                        active ? 'bg-[var(--raised)] font-medium text-[var(--accent)]' : 'text-[var(--muted)] hover:text-[var(--fg)]',
+                      ]}
+                    >
+                      {e.data.title}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <!-- Mobile sidebar panel -->
+    <div data-mobile-nav class="fixed inset-0 z-50 hidden bg-[var(--bg)] lg:hidden">
+      <div class="flex h-16 items-center justify-between border-b border-[var(--faint)] px-5">
+        <span class="text-sm font-medium">Docs</span>
+        <button type="button" data-menu-close class="rounded-full border border-[var(--faint)] px-3.5 py-1.5 text-sm text-[var(--muted)]">Close</button>
+      </div>
+      <nav class="space-y-7 overflow-y-auto px-5 py-8 text-sm" aria-label="Docs navigation (mobile)">
+        {sections.map((section) => (
+          <div>
+            <p class="mb-2 font-mono text-xs tracking-wider text-[var(--muted)] uppercase">{section}</p>
+            <ul class="space-y-1">
+              {all.filter((e) => e.data.section === section).map((e) => {
+                const href = hrefFor(e.id);
+                const active = href === currentHref;
+                return (
+                  <li>
+                    <a href={href} class:list={['block rounded-lg px-2.5 py-2 transition', active ? 'bg-[var(--raised)] font-medium text-[var(--accent)]' : 'text-[var(--muted)]']}>
+                      {e.data.title}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+    </div>
+
+    <!-- Content -->
+    <main class="min-w-0 flex-1 py-10">
+      <div class="mx-auto max-w-[42rem]">
+        <div class="mb-6 flex items-center gap-2">
+          <button type="button" data-copy-markdown class="rounded-full border border-[var(--faint)] px-3 py-1 font-mono text-xs text-[var(--muted)] transition hover:text-[var(--fg)]">
+            Copy as Markdown
+          </button>
+          <a href={`${currentHref}.md`} class="rounded-full border border-[var(--faint)] px-3 py-1 font-mono text-xs text-[var(--muted)] transition hover:text-[var(--fg)]">
+            View as Markdown
+          </a>
+        </div>
+
+        <p class="font-mono text-xs tracking-wider text-[var(--accent)] uppercase">{entry.data.section}</p>
+        <h1 class="mt-2 text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-4xl">{entry.data.title}</h1>
+        <p class="mt-3 text-[var(--muted)]">{entry.data.description}</p>
+
+        <div class="prose-aso mt-10">
+          <Content components={components} />
+        </div>
+
+        <div class="mt-16 grid gap-3 border-t border-[var(--faint)] pt-8 sm:grid-cols-2">
+          {prev ? (
+            <a href={hrefFor(prev.id)} class="group rounded-xl border border-[var(--faint)] p-4 transition hover:border-[color-mix(in_oklab,var(--accent)_55%,transparent)]">
+              <span class="font-mono text-xs text-[var(--muted)]">Previous</span>
+              <p class="mt-1 font-medium">{prev.data.title}</p>
+            </a>
+          ) : <span />}
+          {next && (
+            <a href={hrefFor(next.id)} class="group rounded-xl border border-[var(--faint)] p-4 text-right transition hover:border-[color-mix(in_oklab,var(--accent)_55%,transparent)]">
+              <span class="font-mono text-xs text-[var(--muted)]">Next</span>
+              <p class="mt-1 font-medium">{next.data.title}</p>
+            </a>
+          )}
+        </div>
+      </div>
+    </main>
+
+    <!-- On this page -->
+    <aside class="hidden w-48 shrink-0 xl:block">
+      <nav class="sticky top-24 space-y-2 py-10 text-sm" aria-label="On this page">
+        {toc.length > 0 && <p class="font-mono text-xs tracking-wider text-[var(--muted)] uppercase">On this page</p>}
+        <ul class="space-y-1.5" data-toc>
+          {toc.map((h) => (
+            <li>
+              <a
+                href={`#${h.slug}`}
+                data-toc-link={h.slug}
+                class:list={['block text-[var(--muted)] transition hover:text-[var(--fg)]', h.depth === 3 && 'pl-3']}
+              >
+                {h.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </aside>
+  </div>
+
+  <footer class="border-t border-[var(--faint)]">
+    <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-5 py-8 text-sm text-[var(--muted)] sm:flex-row sm:px-8">
+      <div class="flex items-center gap-2.5">
+        <Mark class="size-5 text-[var(--fg)]" />
+        <Wordmark class="h-3.5 w-auto text-[var(--fg)]" />
+        <span class="ml-2">MIT licensed</span>
+      </div>
+      <div class="flex gap-5">
+        <a class="transition hover:text-[var(--fg)]" href="/docs">Docs</a>
+        <a class="transition hover:text-[var(--fg)]" href={github}>GitHub</a>
+      </div>
+    </div>
+  </footer>
+</Layout>
+
+<script>
+  // Mobile sidebar toggle.
+  const toggle = document.querySelector('[data-menu-toggle]');
+  const close = document.querySelector('[data-menu-close]');
+  const panel = document.querySelector<HTMLElement>('[data-mobile-nav]');
+  toggle?.addEventListener('click', () => panel?.classList.remove('hidden'));
+  close?.addEventListener('click', () => panel?.classList.add('hidden'));
+
+  // Copy the raw Markdown source of this page.
+  const copyMd = document.querySelector<HTMLButtonElement>('[data-copy-markdown]');
+  copyMd?.addEventListener('click', async () => {
+    try {
+      const path = window.location.pathname.replace(/\/$/, '') + '.md';
+      const res = await fetch(path);
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      copyMd.textContent = 'Copied';
+    } catch {
+      copyMd.textContent = 'Failed to copy';
+    }
+    setTimeout(() => (copyMd.textContent = 'Copy as Markdown'), 1600);
+  });
+
+  // Highlight the current section in "On this page" while scrolling.
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+  if (links.length > 0) {
+    const headings = links
+      .map((link) => document.getElementById(link.dataset.tocLink ?? ''))
+      .filter((el): el is HTMLElement => el !== null);
+
+    const setActive = (slug: string | null) => {
+      for (const link of links) {
+        link.classList.toggle('text-[var(--fg)]', link.dataset.tocLink === slug);
+        link.classList.toggle('font-medium', link.dataset.tocLink === slug);
+      }
+    };
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length > 0) setActive(visible[0].target.id);
+      },
+      { rootMargin: '-10% 0px -70% 0px' },
+    );
+    headings.forEach((h) => io.observe(h));
+  }
+</script>

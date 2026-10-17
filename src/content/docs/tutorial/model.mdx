@@ -1,0 +1,130 @@
+---
+title: Model and migration
+description: Generate the Todo model, fix its table name, and run the migration.
+section: "Tutorial: a todo app"
+order: 4
+---
+
+## Generate the model
+
+```bash
+aso make:model Todo -mcr --fields="title:string done:boolean user:foreign"
+```
+
+`-m` also creates a migration, `-c` a controller, and `-r` makes that controller a resource
+controller (all seven `index`/`create`/`store`/`show`/`edit`/`update`/`destroy` methods).
+`--fields` writes typed columns straight onto the model and the migration; `user:foreign` adds
+a `user_id` foreign key to `users.id`.
+
+This writes `app/models/todo.py`:
+
+<CodeFile name="app/models/todo.py">
+```python
+from sqlalchemy import Boolean, ForeignKey, String
+from aso.database import Mapped, Model, belongs_to, mapped_column
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.models.user import User
+
+
+class Todo(Model):
+    __fillable__ = ["title", "done"]
+
+    title: Mapped[str] = mapped_column(String(255))
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+    user: Mapped["User"] = belongs_to("User")
+```
+</CodeFile>
+
+## Two small fixes
+
+The generator pluralizes table names for you — but English pluralization is hard, and
+`Todo` becomes `todoes`. Override `__tablename__` to fix it:
+
+```python
+class Todo(Model):
+    __tablename__ = "todos"
+```
+
+The controller will also need to set `user_id` itself (from the signed-in user, never from the
+form). Add it to `__fillable__` so `Todo.create()` accepts it — `__fillable__` only guards
+which keys your own code can mass-assign, and the form's validated data never includes
+`user_id` in the first place:
+
+```python
+    __fillable__ = ["title", "done", "user_id"]
+```
+
+<Callout type="warning">
+`aso make:migration`'s autogenerate compares your models against the live database schema —
+and tables that aren't declared as `Model` subclasses (`sessions`, `password_reset_tokens`,
+`failed_jobs`, all created by the skeleton's first migration) aren't part of that comparison.
+Open the generated migration before running it: if it has `op.drop_table(...)` calls for
+tables you didn't touch, delete those lines. This is normal Alembic autogenerate behavior, not
+specific to Aso, but it's worth checking every time.
+</Callout>
+
+The trimmed migration:
+
+<CodeFile name="database/migrations/..._create_todos_table.py">
+```python
+from alembic import op
+import sqlalchemy as sa
+
+revision = "dc57cbb4fa69"
+down_revision = "25d246f4b11c"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "todos",
+        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), primary_key=True, autoincrement=True),
+        sa.Column("title", sa.String(length=255), nullable=False),
+        sa.Column("done", sa.Boolean(), nullable=False),
+        sa.Column("user_id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
+    )
+
+
+def downgrade() -> None:
+    op.drop_table("todos")
+```
+</CodeFile>
+
+## Give the user side of the relationship
+
+Add the matching `has_many` on `User`, so `user.todos` works later:
+
+<CodeFile name="app/models/user.py">
+```python
+from aso.database import has_many
+
+class User(MustVerifyEmail, Authenticatable, Model):
+    # ...existing columns...
+
+    todos: Mapped[list["Todo"]] = has_many("Todo")
+```
+</CodeFile>
+
+## Run the migration
+
+```bash
+aso migrate
+```
+
+```
+Migration table migrated successfully.
+```
+
+## What you used
+
+- `aso make:model -m -c -r --fields=` — model, migration, and resource controller generation.
+- `__tablename__`, `__fillable__` — model attributes you can override.
+- `belongs_to`, `has_many` — relationship declarations.
+- `aso migrate` — applies pending migrations.

@@ -1,0 +1,17 @@
+---
+import { getCollection } from 'astro:content';
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('docs');
+  return entries.map((entry) => {
+    const trimmed = entry.id.replace(/\/index$/, '');
+    const slug = trimmed === 'index' || trimmed === '' ? undefined : trimmed;
+    return { params: { slug }, props: { entry } };
+  });
+}
+
+const { entry } = Astro.props;
+---
+
+<DocsLayout entry={entry} />

@@ -1,0 +1,49 @@
+---
+interface Props {
+  name: string;
+}
+
+const { name } = Astro.props;
+---
+
+<div class="not-prose doc-codefile my-6 overflow-hidden rounded-2xl border border-white/5 bg-[#17211f] shadow-[0_20px_60px_-35px_rgba(18,25,23,.55)]">
+  <div class="flex items-center justify-between gap-3 border-b border-white/5 px-4 py-2.5">
+    <span class="truncate font-mono text-xs text-white/50">{name}</span>
+    <button type="button" data-codefile-copy class="shrink-0 rounded-md border border-white/10 px-2 py-0.5 font-mono text-[0.68rem] text-white/50 transition hover:text-white/85">
+      Copy
+    </button>
+  </div>
+  <div class="doc-codefile-body">
+    <slot />
+  </div>
+</div>
+
+<script>
+  document.addEventListener('click', async (event) => {
+    const button = (event.target as HTMLElement)?.closest<HTMLButtonElement>('[data-codefile-copy]');
+    if (!button) return;
+    const code = button.closest('.doc-codefile')?.querySelector('pre code');
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code.textContent ?? '');
+      button.textContent = 'Copied';
+    } catch {
+      button.textContent = 'Select & copy';
+    }
+    setTimeout(() => (button.textContent = 'Copy'), 1600);
+  });
+</script>
+
+<style>
+  .doc-codefile-body :global(pre) {
+    margin: 0;
+    background: transparent !important;
+    padding: 1.1rem 1.25rem;
+    overflow-x: auto;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+  }
+  .doc-codefile-body :global(code) {
+    font-family: var(--font-mono);
+  }
+</style>

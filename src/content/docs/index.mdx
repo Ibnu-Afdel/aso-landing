@@ -1,0 +1,84 @@
+---
+title: Introduction
+description: What Aso is, who it's for, and how a request becomes a page.
+section: Getting started
+order: 1
+---
+
+Aso is a batteries-included Python web framework. FastAPI runs the server, React runs the
+client, and [Inertia](https://inertiajs.com) connects them. You get routing, an async ORM,
+auth, queues, mail, and an artisan-style CLI, all in one install.
+
+## Who it's for
+
+If you know Laravel, the layout and the CLI will feel familiar: `app/`, `routes/`,
+`database/migrations/`, a `make:model` generator, a `.env` file. If you know Python but not
+Laravel, Aso still reads as plain Python and plain React — there's no PHP underneath it, and
+no magic you can't trace back to a function call.
+
+## One request, top to bottom
+
+A route points at a controller method. The controller loads or writes data, then renders an
+Inertia page with its props. The browser gets a real React component, not a JSON endpoint you
+have to wire up yourself.
+
+<CodeFile name="routes/web.py">
+```python
+from aso.routing import Route
+
+from app.http.controllers.post_controller import PostController
+
+Route.get("/posts", [PostController, "index"]).name("posts.index")
+```
+</CodeFile>
+
+<CodeFile name="app/http/controllers/post_controller.py">
+```python
+from aso.http import Controller
+from aso.inertia import inertia
+from app.models.post import Post
+
+class PostController(Controller):
+    async def index(self):
+        posts = await Post.latest().get()
+        return inertia("posts/index", {"posts": posts})
+```
+</CodeFile>
+
+<CodeFile name="resources/js/pages/posts/index.tsx">
+```tsx
+export default function Index({ posts }: { posts: Post[] }) {
+    return (
+        <ul>
+            {posts.map((post) => <li key={post.id}>{post.title}</li>)}
+        </ul>
+    );
+}
+```
+</CodeFile>
+
+No serializers, no API client, and no separate frontend repo to keep in sync.
+
+## What's in the box
+
+- **Routing** with named routes, middleware groups, and resource routes (`T-10`).
+- **An async ORM** on SQLAlchemy 2: models, relationships, scopes, eager loading, pagination.
+- **Auth** from the first run: registration, login, password reset, email verification.
+- **Validation** through Pydantic-backed `FormRequest` classes.
+- **Queues, mail, cache, and storage**, with one small API for each.
+- **An artisan-style CLI** (`aso make:model`, `aso migrate`, `aso routes:generate`, ...).
+- **Typed routes**: your Python routes become typed TypeScript helpers, so renaming a route is
+  a compile error in your frontend, not a 404 in production.
+- **Architecture tests** that fail the build if a controller imports SQLAlchemy directly or a
+  model reaches into HTTP code.
+
+## What it isn't
+
+Aso is an early release (`v0.2`). The API can still change between versions, and some areas —
+batch authorization, API token guards, multiple database connections — aren't built yet. Treat
+it as a framework you can build real things with today, not a finished product.
+
+<Callout type="note">
+This tutorial builds a small todo app, one feature at a time, using the real commands and the
+real generated files. Start with [Installation](/docs/installation).
+</Callout>

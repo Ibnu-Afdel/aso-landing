@@ -1,0 +1,50 @@
+---
+---
+
+<div class="not-prose my-6 border-t border-[var(--faint)]">
+  <ol class="steps-list">
+    <slot />
+  </ol>
+</div>
+
+<style>
+  .steps-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .steps-list > :global(li) {
+    position: relative;
+    counter-increment: step;
+    padding: 1.1rem 0 1.1rem 2.5rem;
+    border-bottom: 1px solid var(--faint);
+  }
+  .steps-list {
+    counter-reset: step;
+  }
+  .steps-list > :global(li:last-child) {
+    border-bottom: none;
+  }
+  .steps-list > :global(li::before) {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--faint);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--accent);
+  }
+  .steps-list > :global(li > *:first-child) {
+    margin-top: 0;
+  }
+  .steps-list > :global(li > *:last-child) {
+    margin-bottom: 0;
+  }
+</style>

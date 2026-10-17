@@ -1,0 +1,84 @@
+---
+title: Updating and deleting
+description: Toggle done, edit a title, and delete a todo with router calls.
+section: "Tutorial: a todo app"
+order: 7
+---
+
+## The update request
+
+```bash
+aso make:request UpdateTodoRequest
+```
+
+<CodeFile name="app/http/requests/update_todo_request.py">
+```python
+from pydantic import Field
+
+from aso.http import FormRequest
+
+
+class UpdateTodoRequest(FormRequest):
+    title: str = Field(min_length=1, max_length=255)
+    done: bool = False
+```
+</CodeFile>
+
+One request handles both "toggle done" and "edit title" — both go through the same `update`
+action with the full, current state of the todo.
+
+## The controller actions
+
+<CodeFile name="app/http/controllers/todo_controller.py">
+```python
+class TodoController(Controller):
+    # ...index, store...
+
+    async def update(self, form: UpdateTodoRequest, todo: Todo):
+        await todo.update(**form.validated())
+        return redirect().route("todos.index").with_flash("success", "Todo updated.")
+
+    async def destroy(self, todo: Todo):
+        await todo.delete()
+        return redirect().route("todos.index").with_flash("success", "Todo deleted.")
+```
+</CodeFile>
+
+`todo: Todo` on both methods is route-model binding: the `{todo}` segment in the URL is
+resolved to a `Todo` instance before your method runs (a missing id is a 404, not an
+exception you have to catch).
+
+## Calling them from the page
+
+Aso issues real `PUT`/`DELETE` requests from the browser — there's no method-spoofing hidden
+field to add, since Inertia's `router` and `<Form>` both send the actual HTTP verb over fetch.
+A checkbox toggles `done`, a double-click starts an inline edit, and a button deletes:
+
+<CodeFile name="resources/js/pages/todos/index.tsx">
+```tsx
+import { router } from "@inertiajs/react";
+import TodoController from "@/actions/app/http/controllers/todo_controller";
+
+function toggle(todo: Todo) {
+    router.patch(TodoController.update.url(todo.id), { title: todo.title, done: !todo.done });
+}
+
+function saveEdit(todo: Todo, title: string) {
+    router.patch(TodoController.update.url(todo.id), { title, done: todo.done });
+}
+
+function destroy(todo: Todo) {
+    router.delete(TodoController.destroy.url(todo.id));
+}
+```
+</CodeFile>
+
+`TodoController.update.url(todo.id)` fills in the `{todo}` route parameter for you — the
+generated helper accepts the id directly, or `{ todo: id }`, or `{ id }`.
+
+## What you used
+
+- Route-model binding — a typed `Todo` parameter, resolved from the URL.
+- `todo.update(**form.validated())` — update an existing row with validated data.
+- `router.patch()` / `router.delete()` — imperative Inertia requests outside of `<Form>`.
+- `Controller.action.url(id)` — a generated helper that fills in route parameters.
