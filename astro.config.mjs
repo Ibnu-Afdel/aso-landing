@@ -8,6 +8,7 @@ import mdx from '@astrojs/mdx';
 // https://astro.build/config
 export default defineConfig({
   site: 'https://aso.ibnuafdel.com',
+  trailingSlash: 'never',
   integrations: [sitemap(), mdx()],
   markdown: {
     shikiConfig: { theme: 'everforest-dark' },
