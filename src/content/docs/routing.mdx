@@ -34,7 +34,7 @@ Route.get("/posts/{post}", [PostController, "show"]).name("posts.show")
 
 `Route.resource("posts", PostController)` registers all seven RESTful routes at once:
 `index`, `create`, `store`, `show`, `edit`, `update`, `destroy`. A resource controller only
-needs to define the methods it uses — a missing method is simply skipped, not an error.
+needs to define the methods it uses — a missing method is skipped, not an error.
 
 ```python
 Route.resource("posts", PostController)
