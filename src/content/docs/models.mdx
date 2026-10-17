@@ -1,0 +1,187 @@
+---
+title: Models and queries
+description: Defining models, mass assignment, serialization, and the query builder.
+section: Database
+order: 26
+---
+
+A model is a SQLAlchemy 2 declarative class with an Eloquent-shaped API bolted on: `id`,
+`created_at`, and `updated_at` are added automatically, the table name is inferred, and
+`Post.where(...)` works as a class-level shortcut without you writing a session anywhere.
+
+<CodeFile name="app/models/post.py">
+```python
+from sqlalchemy import Boolean, String
+from aso.database import Mapped, Model, mapped_column
+
+
+class Post(Model):
+    __fillable__ = ["title", "body", "published"]
+
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column()
+    published: Mapped[bool] = mapped_column(Boolean, default=False)
+```
+</CodeFile>
+
+```bash
+aso make:model Post -mcr --fields="title:string body:text published:boolean"
+```
+
+`-m`/`-c`/`-r`/`-f`/`-s` add a migration/controller/resource-controller/factory/seeder; `-a` is
+all of them. `--fields` writes typed columns onto both the model and the generated migration.
+
+## Table names
+
+Inferred from the class name: `Post` → `posts`, `BlogPost` → `blog_posts` — snake-cased and
+pluralized. A handful of irregular plurals are built in (`Todo` → `todos`, not `todoes`);
+override any of them with an explicit `__tablename__ = "..."` when the inferred name is wrong.
+
+## Mass assignment
+
+`__fillable__` is the allow-list for anything that goes through `create()`, `update()`, or
+`.fill()`. Leave both `__fillable__` and `__guarded__` unset and mass assignment is
+unrestricted (fine for a quick prototype, not recommended once real user input reaches it); set
+`__guarded__` instead of `__fillable__` to list what's *excluded* rather than what's allowed.
+In `local`/`testing`, assigning a non-fillable key raises immediately instead of silently
+dropping it, so the mistake surfaces in a test, not in production:
+
+```python
+await Post.create(title="Hello", body="...", user_id=auth().id())  # user_id must be fillable
+await post.update(title="New title")
+post.fill(title="New title")   # sets attributes without saving
+await post.save()
+```
+
+## Casts and hidden fields
+
+A column's Python type comes from its `Mapped[...]` annotation and SQLAlchemy type — there's
+no separate `$casts` array. Two column types handle the common "needs special treatment on the
+way in or out" cases:
+
+```python
+from aso.database import Hashed, UtcDateTime
+
+password: Mapped[str] = mapped_column(Hashed(String(255)))   # hashed on assignment
+posted_at: Mapped[datetime] = mapped_column(UtcDateTime)       # always round-trips aware UTC
+```
+
+`__hidden__` keeps a field out of `to_dict()` (and therefore out of an Inertia prop) without
+touching the database column itself — the starter kit's `User` hides `password` and
+`remember_token` this way. `__appends__` adds computed attributes (regular Python
+`@property`s) to the serialized output alongside real columns.
+
+```python
+class User(Authenticatable, Model):
+    __hidden__ = ["password", "remember_token"]
+```
+
+## Create, update, delete
+
+```python
+post = await Post.create(title="Hello", body="...")
+post = await Post.find(1)
+post = await Post.find_or_fail(1)          # 404-style ModelNotFound instead of None
+await post.update(title="Updated")
+await post.delete()
+await Post.destroy([1, 2, 3])               # delete by id(s)
+```
+
+`save()` only writes if something actually changed (`is_dirty()`); timestamps update
+automatically. `refresh()`/`fresh()` reload a row (and its already-loaded relations) from the
+database.
+
+## The query builder
+
+Every `Builder` method returns a **new** builder — chain freely, and reuse a base query safely
+without one call mutating another:
+
+```python
+posts = await Post.where(Post.published == True).latest().get()
+post = await Post.where(Post.slug == "hello").first()
+count = await Post.where(Post.published == True).count()
+
+recent = Post.latest()
+newest = await recent.first()
+total = await recent.count()   # unaffected by the .first() above
+```
+
+Common terminal methods: `.get()` (a list), `.first()`/`.first_or_fail()`, `.find(id)`,
+`.count()`, `.exists()`, `.sum()`/`.avg()`/`.min()`/`.max()`, `.pluck(column)`. Common
+filters: `.where(...)`/`.or_where(...)` (positional SQLAlchemy expressions, or `key=value`
+keyword shortcuts), `.where_in()`, `.where_null()`, `.where_between()`. Ordering: `.latest()`
+(by `created_at` descending), `.oldest()`, `.order_by(column, "desc")`. `.when(condition, fn)`
+applies a clause only when `condition` is truthy, without an `if` block breaking the chain:
+
+```python
+posts = await (
+    Post.query()
+    .when(search, lambda q: q.where(Post.title.contains(search)))
+    .latest()
+    .get()
+)
+```
+
+## Scopes
+
+A `@scope` method takes the model class and a builder and returns a modified builder — call it
+either from the class or mid-chain:
+
+```python
+from aso.database import scope
+
+class Post(Model):
+    @scope
+    def published(cls, query):
+        return query.where(cls.published == True)
+```
+
+```python
+await Post.published().get()                 # from the class
+await Post.where(Post.user_id == 1).published().get()  # mid-chain
+```
+
+## Pagination
+
+```python
+posts = await Post.latest().paginate(15)
+return inertia("posts/index", {"posts": posts})
+```
+
+A paginator serializes with `.to_dict()` automatically (the same keys as Laravel's paginator:
+`data`, `links`, `current_page`, `total`, ...) — pass it straight into `inertia(...)` without
+converting it yourself. `.simple_paginate()` skips the total count (cheaper, no page numbers
+beyond next/previous); `.cursor_paginate()` is keyset-based, for very large or frequently
+changing tables.
+
+## Factories and seeders
+
+See [Migrations](/docs/migrations) for `aso make:factory`/`db:seed` — factories are the usual
+way to build test data (`await UserFactory.new().create()`), not something you reach for in
+application code.
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `protected $fillable` | `__fillable__` |
+| `protected $hidden` | `__hidden__` |
+| `protected $casts = ['x' => 'hashed']` | `mapped_column(Hashed(...))` |
+| `Post::where(...)->get()` | `await Post.where(...).get()` |
+| `Post::find($id)` | `await Post.find(id)` |
+| `$post->update([...])` | `await post.update(...)` |
+| Local scopes (`scopePublished`) | `@scope def published(cls, query)` |
+| `->paginate(15)` | `.paginate(15)`, same shape serialized |
+
+## Gotchas
+
+- Every query method is `async` — `Post.where(...)` builds the query synchronously, but
+  `.get()`/`.first()`/`.count()` all need `await`.
+- A non-fillable key raises in `local`/`testing` instead of silently dropping (Laravel's
+  default); add the key to `__fillable__` once you decide it's safe.
+- `Model.__getattr__`/`Builder.__getattr__` are how `Post.where(...)` and
+  `builder.published()` both work — a typo'd method name raises `AttributeError`, same as any
+  other missing attribute, not a silent no-op.
+- `.sum()`/`.count()`/`.exists()` on a `SoftDeletes` model correctly exclude trashed rows even
+  though they bypass the normal row-by-row ORM path — you don't need `.with_trashed()` to be
+  careful about it, and you do need it deliberately to include trashed rows.

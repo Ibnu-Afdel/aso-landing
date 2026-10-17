@@ -1,0 +1,147 @@
+---
+title: Relationships
+description: belongs_to, has_many, many-to-many, eager loading, and why lazy loading raises.
+section: Database
+order: 27
+---
+
+Relationships are declared with a helper function instead of a method you write yourself —
+each one wraps a SQLAlchemy `relationship()` and, when both sides of a pair are declared, wires
+up the back-reference automatically.
+
+## `belongs_to` and `has_many`
+
+<CodeFile name="app/models/todo.py">
+```python
+from aso.database import Mapped, Model, belongs_to, mapped_column
+from sqlalchemy import ForeignKey
+
+class Todo(Model):
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user: Mapped["User"] = belongs_to("User")
+```
+</CodeFile>
+
+<CodeFile name="app/models/user.py">
+```python
+from aso.database import has_many
+
+class User(Model):
+    todos: Mapped[list["Todo"]] = has_many("Todo")
+```
+</CodeFile>
+
+Declaring both sides lets Aso pair them: assigning `todo.user = some_user` is reflected in
+`some_user.todos` once that relation is loaded, the same bidirectional behavior SQLAlchemy's
+`back_populates` gives you — you don't configure that wiring by hand. `has_one` is `has_many`'s
+single-row sibling (`uselist=False`), for a strict one-to-one.
+
+Both helpers infer the foreign key by convention (`{owner}_id`); override it with
+`foreign_key=` when the column is named differently.
+
+## Many-to-many
+
+```python
+from aso.database import belongs_to_many
+
+class Post(Model):
+    tags: Mapped[list["Tag"]] = belongs_to_many("Tag")
+
+class Tag(Model):
+    posts: Mapped[list["Post"]] = belongs_to_many("Post")
+```
+
+A pivot table (`post_tag`, by default the two table names joined alphabetically) is created
+automatically — you don't declare it as its own model. Manage rows on it through the relation,
+not direct SQL:
+
+```python
+await post.relation("tags").attach([1, 2, 3])
+await post.relation("tags").detach([2])
+await post.relation("tags").sync([1, 3])    # replaces the full set, returns {"attached": [...], "detached": [...]}
+await post.relation("tags").toggle([1, 4])
+```
+
+## Creating through a relation
+
+```python
+comment = await post.relation("comments").create(body="Nice post!")
+```
+
+This fills in the foreign key (or, for many-to-many, creates the row and attaches the pivot)
+for you — there's no need to set `post_id` yourself.
+
+## Eager loading
+
+Querying a relationship you haven't loaded raises instead of silently issuing another query —
+see "why lazy loading raises" below. Load what you need up front with `.with_(...)`:
+
+```python
+posts = await Post.with_("comments").get()
+posts = await Post.with_("comments", "author").get()
+posts = await Post.with_("comments.author").get()        # nested: comments, then each comment's author
+
+# constrained: only load comments matching a condition
+posts = await Post.with_({"comments": lambda q: q.where(Comment.approved == True)}).get()
+```
+
+On an already-loaded instance:
+
+```python
+await post.load("comments")          # (re)load one relation on this instance
+await post.load_missing("comments")  # only if it isn't already loaded
+```
+
+## Counting related rows without loading them
+
+```python
+posts = await Post.with_count("comments").get()
+posts[0].comments_count   # an int, no `comments` relation loaded
+```
+
+## Querying by a relationship's existence
+
+```python
+posts = await Post.where_has("comments", lambda q: q.where(Comment.approved == True)).get()
+posts = await Post.doesnt_have("comments").get()
+```
+
+## Why lazy loading raises
+
+In a synchronous web framework, touching an unloaded relationship (`post.comments`) quietly
+issues another query on the same connection — annoying for performance, but not incorrect. In
+an async app that query would need its own `await`, and a plain attribute access can't `await`
+anything. Rather than silently returning wrong data (or blocking the event loop), accessing an
+unloaded relation raises `LazyLoadingViolation` immediately, naming the exact fix:
+
+```
+LazyLoadingViolation: Attempted to lazy load [comments] on model [Post]. Eager load it with
+Post.with_("comments") or `await post.load("comments")`.
+```
+
+This is why every list of models you render through `inertia(...)` needs its relations loaded
+up front with `.with_(...)` — there's no second chance to fetch them once the response is being
+serialized.
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `belongsTo(User::class)` | `belongs_to("User")` |
+| `hasMany(Todo::class)` | `has_many("Todo")` |
+| `belongsToMany(Tag::class)` | `belongs_to_many("Tag")` |
+| `Post::with('comments')->get()` | `await Post.with_("comments").get()` |
+| `$post->comments()->create([...])` | `await post.relation("comments").create(...)` |
+| `$post->comments()->attach([1,2])` | `await post.relation("comments").attach([1, 2])` |
+| N+1 queries, silent | `LazyLoadingViolation`, loud |
+| `withCount('comments')` | `.with_count("comments")` |
+
+## Gotchas
+
+- `post.comments` after `Post.find(1)` (no `.with_()`/`.load()`) raises — it's never a silent
+  extra query, unlike Laravel's default.
+- `.with_(...)` accepts dotted paths for nested relations (`"comments.author"`), but a
+  constraint callback can't call `.order_by(...)` — fix the order on the relationship
+  declaration itself, or query through `.relation(...)` directly.
+- Pass ids to a background job, not loaded models or their relations — reload inside
+  `handle()` (see [Queues, mail, and cache](/docs/queues-mail-cache)).
