@@ -1,0 +1,133 @@
+---
+title: Aso and FastAPI
+description: What create_app() returns, routes/api.py, FastAPI dependencies, and habits to drop.
+section: Python & FastAPI
+order: 35
+---
+
+Aso doesn't reimplement a web server — `create_app()` returns a real `FastAPI` instance, and
+everything you already know about Starlette/FastAPI internals still applies. This page is
+about where the seam is: what Aso adds on top, and which FastAPI habits don't fit through it.
+
+## `bootstrap/app.py`
+
+```python
+def create_app():
+    return (
+        Application.configure(base_path=__file__)
+        .with_routing(web="routes/web.py", api="routes/api.py", console="routes/console.py", health="/up")
+        .with_middleware(middleware)
+        .with_exceptions(exceptions)
+        .create()
+    )
+```
+
+`.create()` is the line that actually builds the `FastAPI` app: it loads `.env` and
+`config/`, configures the database engine, runs your route files (recording definitions, not
+touching FastAPI yet), then compiles every recorded route into a real FastAPI route with its
+middleware pipeline attached. `uvicorn` (what `aso serve`/`aso dev` run underneath) calls
+`create_app()` once per worker process, the same as any other FastAPI app's factory function.
+
+## `routes/api.py`
+
+Routes registered here get no session, no CSRF layer, and the `/api` prefix automatically —
+built for stateless JSON, not for serving pages:
+
+```python
+from aso.routing import Route
+
+from app.http.controllers.webhook_controller import WebhookController
+
+Route.post("/webhooks/stripe", [WebhookController, "stripe"])
+```
+
+They're also the only routes included in the OpenAPI schema, and the only ones visible at
+`/api/docs` — which only exists when `APP_DEBUG=true`. A `routes/web.py` route is deliberately
+left out of the schema; it serves Inertia pages, not a documented JSON contract.
+
+## Using a FastAPI dependency
+
+`Depends(...)` works on a controller method parameter exactly as it does on a plain FastAPI
+endpoint — Aso's route compiler only special-cases `FormRequest`, a `Model`-typed path
+parameter, and the request object; anything else passes straight through to FastAPI itself:
+
+```python
+from typing import Annotated
+
+from fastapi import Depends
+
+from aso.http import Controller, response
+
+
+def get_api_key(x_api_key: str) -> str:
+    return x_api_key
+
+
+class WebhookController(Controller):
+    async def stripe(self, api_key: Annotated[str, Depends(get_api_key)]):
+        return response().json({"ok": True})
+```
+
+## Mounting a plain `APIRouter`
+
+For something that's easier to write as ordinary FastAPI — a third-party integration's router,
+say — mount it alongside your Aso routes instead of porting it:
+
+```python
+from fastapi import APIRouter
+
+from aso.routing import Route
+
+router = APIRouter()
+
+@router.get("/webhooks/health")
+def webhook_health() -> dict:
+    return {"status": "ok"}
+
+Route.include_router(router)
+```
+
+`Route.include_router(...)` mounts every route the `APIRouter` already has, inheriting
+whichever group (`web`/`api`) and prefix the current route file is loading under — call it
+from `routes/api.py` for the `/api` prefix and no CSRF, or from `routes/web.py` to pick up the
+session/CSRF layers the ordinary way.
+
+## What the request object is
+
+`aso.http.Request` *is* a Starlette `Request` subclass — the same object FastAPI's own request
+parameter would give you, with a cached body (so a middleware, a `FormRequest`, and your
+controller can all read it) and the extra helpers (`.query()`, `.input()`, `.user()`, ...) from
+[Controllers](/docs/controllers). Type a parameter `request: Request` (from `aso.http`, not
+`fastapi` or `starlette`) to get it.
+
+## FastAPI habits to leave behind
+
+- Reading `await request.json()`/`request.form()` directly in a route handler — take a
+  `FormRequest` instead ([Validation](/docs/validation), architecture rule A3). It's not just
+  style: a `FormRequest` is also what turns a failure into a web redirect-with-errors instead
+  of a bare 422, which a raw `request.json()` read has no way to do.
+- A Pydantic response model as the return type annotation — Aso's routes don't use FastAPI's
+  response-model validation; return `inertia(...)`, `redirect(...)`, or `response().json(...)`
+  and leave the return annotation off (or `-> Response`).
+- Building a database session yourself (`AsyncSession(engine)`) — use `aso.database.DB`
+  or a `Model`'s own query methods; architecture rule A9 enforces this for app code.
+
+## Coming from Laravel (by way of FastAPI)
+
+| FastAPI alone | Aso |
+|---|---|
+| `app = FastAPI()` | `create_app()` returns the equivalent, already wired up |
+| `@app.get("/posts")` | `Route.get("/posts", [PostController, "index"])` |
+| `Depends(get_db)` for a session | `aso.database.DB` / `Model` query methods |
+| Pydantic response models | `inertia(...)` / `response().json(...)` |
+| `/docs` always on | `/api/docs`, only in debug, API routes only |
+
+## Gotchas
+
+- `routes/web.py` routes never appear in the OpenAPI schema — if you need a route documented
+  there, register it in `routes/api.py` (or mount an `APIRouter` through
+  `Route.include_router(...)` from that file).
+- `/api/docs` only exists when `APP_DEBUG=true` — it's not available in production by default.
+- A `FastAPI` `Depends` dependency on a controller method works, but still has no access to
+  `self.authorize(...)` or anything else that's a method on `Controller` — it's a plain
+  function, resolved the same way FastAPI resolves it anywhere else.

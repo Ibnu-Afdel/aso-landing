@@ -1,0 +1,132 @@
+---
+title: Async Python for Laravel developers
+description: async/await everywhere, forgetting await, type hints, and uv.
+section: Python & FastAPI
+order: 34
+---
+
+PHP has no event loop to think about — each request runs start to finish on its own. Python's
+`async`/`await` means a single process can hold many requests in flight at once, but only if
+every I/O-bound call says so explicitly. This page is the handful of things that trip up a
+Laravel developer meeting that for the first time.
+
+## Why (almost) everything is `async def`
+
+A controller method, a model query, a middleware's `handle()` — all `async def`. Not because
+Aso prefers it stylistically, but because every one of them might touch the database, and a
+database call over a network socket is exactly the kind of work `async`/`await` exists for:
+while one request waits on a query, the process can work on a different request instead of
+sitting idle.
+
+```python
+async def index(self):
+    todos = await Todo.where(Todo.user_id == auth().id()).latest().get()
+    return inertia("todos/index", {"todos": todos})
+```
+
+`await` is what actually runs the query and gets the result back; the function stays `async
+def` so Python knows it's allowed to pause there.
+
+## What happens if you forget `await`
+
+```python
+todos = Todo.where(...).get()   # missing await
+```
+
+This doesn't run the query. It returns a `coroutine` object — a paused function, not a result
+— and nothing about Python stops you from treating it like one anyway until something tries to
+use it as a list:
+
+```
+TypeError: object of type 'coroutine' is not subscriptable
+```
+
+Python usually also prints a `RuntimeWarning: coroutine '...' was never awaited` pointing at
+the exact line — if you ever see that warning, somewhere a result you expected never actually
+got computed.
+
+## There's no lazy loading, on purpose
+
+Laravel will happily run an extra query when you touch an unloaded relationship — annoying for
+performance, but harmless. In Python, that extra query would need its own `await`, and a plain
+attribute access (`post.comments`) has no way to do that. Rather than silently return wrong
+data, touching an unloaded relationship raises `LazyLoadingViolation` immediately. See
+[Relationships](/docs/relationships#why-lazy-loading-raises) for the fix
+(`.with_()`/`.load()`) — this is the single biggest async-shaped surprise coming from Eloquent.
+
+## Blocking code inside an async function
+
+A query is `async`-aware because the database driver is. A call to a synchronous library —
+hashing with `bcrypt`, resizing an image, calling a non-async HTTP client — blocks the whole
+event loop while it runs, stalling every other request the process is handling, not just
+yours. Hand it to a worker thread instead:
+
+```python
+import asyncio
+
+result = await asyncio.to_thread(some_blocking_function, arg)
+```
+
+This is exactly what `auth().attempt(...)` does internally for password hashing — `bcrypt`'s
+check is CPU-bound and synchronous, so it runs in a thread instead of blocking the loop for
+every login attempt.
+
+## Type hints and Pydantic, in two minutes
+
+PHP has had types for a while, but nothing enforces them past a `TypeError` at the call site.
+Python's type hints (`name: str`, `-> list[Post]`) are checked by a separate tool (`mypy`,
+or your editor) — Python itself mostly ignores them at runtime. Pydantic is the one place
+type hints *do* enforce something live: a `FormRequest` field's annotation is both the
+declared type and the validation rule.
+
+```python
+class StorePostRequest(FormRequest):
+    title: str                    # required, must be a string
+    views: int = 0                # optional, defaults to 0
+    tags: list[str] = []          # a list of strings
+    published_at: datetime | None = None   # optional, parsed from an ISO string
+```
+
+A request body that doesn't match these types fails the same way a `Field(...)` constraint
+does — see [Validation](/docs/validation).
+
+## uv, `.venv`, and `uv add`
+
+Laravel's `composer.json`/`composer install` maps onto `pyproject.toml`/`uv sync`. Every Aso
+command in these docs that says `aso ...` is really `uv run aso ...` — `uv run` makes sure the
+command sees the project's virtual environment without you activating it first.
+
+```bash
+uv add some-package          # add a dependency (writes pyproject.toml + uv.lock)
+uv add --dev pytest-mock     # a dev-only dependency
+uv sync                      # install exactly what uv.lock specifies
+uv run aso migrate           # run a command inside the project's venv
+source .venv/bin/activate    # activate it for the rest of the shell session instead
+```
+
+`.venv/` is the project's isolated Python installation, the rough equivalent of
+`vendor/` — never commit it; `uv.lock` is the equivalent of `composer.lock`, and you do commit
+that.
+
+## Coming from Laravel
+
+| Laravel/PHP | Python/Aso |
+|---|---|
+| Every call is synchronous | Most framework calls are `async def` + `await` |
+| N+1 query, silently works | `LazyLoadingViolation`, loud |
+| `composer require` | `uv add` |
+| `composer install` | `uv sync` |
+| `vendor/` | `.venv/` |
+| PHP type hints, best-effort | Pydantic fields, enforced at validation |
+| `php artisan tinker` | `aso tinker` |
+
+## Gotchas
+
+- Calling an `async def` function without `await` never raises on its own — it silently does
+  nothing, which is far more confusing than a loud error. Watch for the `RuntimeWarning` in
+  your terminal.
+- A list comprehension or `for` loop over `async def` calls still needs each call awaited
+  individually (`[await f(x) for x in items]`), or gathered with `asyncio.gather(*[f(x) for x
+  in items])` for concurrency.
+- `uv run aso ...` and `aso ...` (after activating the venv) are equivalent — pick one and stay
+  consistent within a script or CI job.
