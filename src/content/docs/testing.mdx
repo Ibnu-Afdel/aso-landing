@@ -1,0 +1,124 @@
+---
+title: Testing
+description: The pytest plugin, database isolation, database assertions, and fakes.
+section: Beyond the basics
+order: 32
+---
+
+The [tutorial's testing page](/docs/tutorial/testing) covers the `client` fixture and the
+basic assertions. This page goes into what the plugin does for you underneath, and the parts
+that tutorial didn't need: database assertions, and faking mail/queue/storage.
+
+## What the plugin sets up, once per session
+
+`tests/conftest.py` loads `aso.testing.plugin` (every Aso app's `pyproject.toml` already
+depends on `aso`, which registers it as a pytest plugin automatically — nothing to add). Once,
+at the start of the run, it boots your app from `bootstrap/app.py` with `APP_ENV=testing`
+(reading `.env.testing`, SQLite `:memory:` by default) and applies every migration. Then, for
+every single test:
+
+- A database transaction opens before the test and rolls back after — nothing a test writes
+  ever reaches the next test, and you never clean up by hand.
+- Mail/queue fakes and the array session store reset.
+
+## Database assertions
+
+For a check that doesn't need a full response — a job's side effect, a model written outside
+an HTTP request:
+
+```python
+from aso.testing import assert_database_has, assert_database_missing, assert_database_count
+
+await assert_database_has("todos", {"title": "Write the tutorial", "done": False})
+await assert_database_missing("todos", {"id": deleted_id})
+await assert_database_count("todos", 3)
+```
+
+These query the test's own in-progress transaction, so they see writes your test just made
+even though nothing has "committed" yet.
+
+## `acting_as` and request-building helpers
+
+```python
+client.acting_as(user)              # signed in, without a real login request
+client.from_url("/todos")           # sets Referer, for back()/redirect-back assertions
+client.with_session({"key": "v"})   # pre-seed arbitrary session data
+client.without_middleware("throttle")  # skip one route-middleware alias for this request
+client.with_csrf()                  # force CSRF checking (off by default in tests)
+```
+
+Each returns a new `TestClient` sharing the same cookie jar — chain them, or branch off the
+base `client` fixture for different scenarios in the same test.
+
+## More Inertia assertions
+
+Beyond `.assert_inertia(lambda page: ...)` (component, `.has()`, `.where()`), a response can
+simulate the client's own follow-up requests:
+
+```python
+response = await client.acting_as(user).get("/dashboard")
+reloaded = await response.reload_only("recent_activity")       # a partial reload
+with_deferred = await response.load_deferred_props()            # resolve every deferred prop
+props = response.inertia_props("todos.0.title")                 # read a prop by dotted path
+```
+
+## Fakes
+
+Swap mail, the queue, and a storage disk for an in-memory recording instead of the real thing,
+then assert on what *would have* happened:
+
+```python
+from aso.mail import Mail
+from aso.queue import Queue
+from aso.storage import storage
+
+Mail.fake()
+Queue.fake()
+storage.fake("public")
+
+# ... call the code under test ...
+
+Mail.assert_sent(WelcomeMail, lambda m: m.user.id == user.id)
+Queue.assert_dispatched(SendWelcomeEmail)
+assert await storage("public").exists("avatars/1.jpg")
+```
+
+Mail/queue fakes and storage fakes both reset automatically between tests — you don't call
+`Mail.reset()`/`storage.reset_fakes()` yourself inside a normal test.
+
+## `aso test`
+
+A thin wrapper over `pytest` with a few shortcuts:
+
+```bash
+aso test                        # the whole suite
+aso test --filter test_todos    # pytest -k
+aso test --parallel             # pytest-xdist -n auto
+aso test --coverage             # pytest --cov
+aso test --bail                 # stop on the first failure
+```
+
+Anything `pytest` itself accepts also works — `aso test` passes extra arguments straight
+through.
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `RefreshDatabase` trait | Automatic — every test gets a rolled-back transaction |
+| `$this->assertDatabaseHas(...)` | `await assert_database_has(...)` |
+| `$this->actingAs($user)` | `client.acting_as(user)` |
+| `Mail::fake()` / `assertSent(...)` | `Mail.fake()` / `Mail.assert_sent(...)` |
+| `Queue::fake()` | `Queue.fake()` |
+| `Storage::fake('public')` | `storage.fake("public")` |
+| `php artisan test --filter=` | `aso test --filter` |
+
+## Gotchas
+
+- `storage.fake(...)` is a function attached to the `storage` callable itself — the import is
+  `from aso.storage import storage`, then `storage.fake("public")`, not a separate name.
+- A database assertion (`assert_database_has`) reads the test's own open transaction — it
+  works even though nothing has "committed," since there's no commit until the test ends and
+  rolls back.
+- Fakes reset between tests automatically; they don't reset mid-test — call `Mail.fake()`
+  again if you need a clean slate partway through one test.

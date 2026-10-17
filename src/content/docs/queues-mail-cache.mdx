@@ -1,0 +1,169 @@
+---
+title: Queues, mail, cache, and storage
+description: Background jobs, sending mail, caching, file storage, and the task schedule.
+section: Beyond the basics
+order: 31
+---
+
+Four small, independent pieces, each with one config file and one entry point. This page
+covers what exists in each — see the source on [GitHub](https://github.com/Ibnu-Afdel/Aso) for
+anything not covered here.
+
+## Jobs and queues
+
+A job is a plain class with constructor arguments and a `handle()` method. Pass ids, not
+model instances — the arguments are serialized to JSON and must stay that way:
+
+```bash
+aso make:job SendWelcomeEmail
+```
+
+<CodeFile name="app/jobs/send_welcome_email.py">
+```python
+from aso.queue import Job
+
+from app.models.user import User
+
+
+class SendWelcomeEmail(Job):
+    tries = 3
+    backoff = [10, 60]
+
+    def __init__(self, user_id: int) -> None:
+        self.user_id = user_id
+
+    async def handle(self) -> None:
+        user = await User.find_or_fail(self.user_id)
+        ...
+```
+</CodeFile>
+
+```python
+await SendWelcomeEmail(user_id=user.id).dispatch()
+await SendWelcomeEmail(user_id=user.id).dispatch(delay=60)
+await SendWelcomeEmail(user_id=user.id).dispatch_sync()   # run inline, skip the queue entirely
+```
+
+`QUEUE_CONNECTION=sync` (the default) runs jobs inline, in the same request — fine for
+development, and for an app that never needs a separate worker process. Switch to
+`QUEUE_CONNECTION=redis` and run a worker to actually queue them:
+
+```bash
+aso queue:work
+aso queue:failed
+aso queue:retry 3
+```
+
+`dispatch()` validates the constructor arguments are JSON-serializable immediately, so passing
+a model instance by mistake fails at the call site, not inside the worker.
+
+## Mail
+
+A `Mailable` is a plain class describing one envelope and one body:
+
+```bash
+aso make:mail WelcomeMail
+```
+
+<CodeFile name="app/mail/welcome_mail.py">
+```python
+from aso.mail import Content, Envelope, Mailable
+
+from app.models.user import User
+
+
+class WelcomeMail(Mailable):
+    def __init__(self, user: User) -> None:
+        self.user = user
+
+    def envelope(self) -> Envelope:
+        return Envelope(subject=f"Welcome, {self.user.name}!")
+
+    def content(self) -> Content:
+        return Content(view="mail/welcome.html", with_={"user": self.user})
+```
+</CodeFile>
+
+```python
+from aso.mail import Mail
+
+await Mail.to(user.email).send(WelcomeMail(user))
+await Mail.to(user.email).queue(WelcomeMail(user))   # through the queue instead of inline
+```
+
+`MAIL_MAILER=log` (the default) writes every outgoing email to `storage/logs/` instead of
+sending it — nothing leaves your machine while you build. Switch to `smtp` for a real mailer.
+
+## Cache
+
+```python
+from aso.cache import cache
+
+await cache().put("key", value, ttl=600)
+value = await cache().get("key", default=None)
+await cache().remember("system.stats", 600, compute_stats)   # compute_stats runs only on a miss
+await cache().increment("views")
+await cache().forget("key")
+```
+
+`CACHE_STORE=file` (the default) stores entries under `storage/framework/cache/`; `memory` is
+a process-local dict (gone on restart, fine for tests); `redis` needs the optional `redis`
+extra.
+
+## File storage
+
+```python
+from aso.storage import storage
+
+await storage("local").put("reports/x.txt", data)
+await storage("public").put("avatars/1.jpg", data)
+storage("public").url("avatars/1.jpg")   # "/storage/avatars/1.jpg"
+```
+
+`local` (`storage/app`) is private; `public` (`storage/app/public`) is served at `/storage/...`
+once you've run `aso storage:link`. An `UploadedFile` from a `FormRequest` (see
+[Validation](/docs/validation)) stores through the same disk API: `await
+form.validated("avatar").store("avatars")`.
+
+## Scheduling
+
+Recurring tasks are defined once, in `routes/console.py`:
+
+<CodeFile name="routes/console.py">
+```python
+from aso.console import schedule
+from app.jobs.send_digest_email import SendDigestEmail
+
+schedule.command("queue:flush").daily()
+schedule.job(SendDigestEmail()).daily_at("08:00")
+schedule.call(lambda: print("tick")).every_five_minutes()
+```
+</CodeFile>
+
+```bash
+aso schedule:list
+aso schedule:run    # runs whatever is due right now (cron calls this every minute)
+aso schedule:work   # a long-running process that does the above for you
+```
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `php artisan make:job` | `aso make:job` |
+| `SendWelcomeEmail::dispatch($user->id)` | `await SendWelcomeEmail(user_id=user.id).dispatch()` |
+| `QUEUE_CONNECTION=sync` | Same meaning, same default |
+| `Mail::to($user)->send(new WelcomeMail($user))` | `await Mail.to(user.email).send(WelcomeMail(user))` |
+| `MAIL_MAILER=log` | Same |
+| `Cache::remember(...)` | `await cache().remember(...)` |
+| `Storage::disk('public')->put(...)` | `await storage("public").put(...)` |
+| `$schedule->command(...)->daily()` in `Kernel` | `schedule.command(...).daily()` in `routes/console.py` |
+
+## Gotchas
+
+- A job's constructor arguments are serialized to JSON — pass `user_id=user.id`, never
+  `user=user`; reload the model inside `handle()`.
+- `dispatch_sync()` skips the queue driver entirely, even if it's `redis` — useful for a test
+  or a one-off script, not a substitute for a real worker in production.
+- `log` mail writes to `storage/logs/`, not your inbox — switch `MAIL_MAILER` before expecting
+  a real email anywhere outside a test.
