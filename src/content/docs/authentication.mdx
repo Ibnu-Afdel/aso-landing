@@ -1,0 +1,130 @@
+---
+title: Authentication
+description: The starter kit, auth(), login/logout in code, verification, and password hashing.
+section: Security
+order: 29
+---
+
+A new Aso app comes with full authentication already wired up — registration, login, logout,
+password reset, and email verification are routes, controllers, and pages that ship with every
+project, not something you build from a tutorial. [Authorization](/docs/authorization) (what a
+signed-in user is allowed to do) is a separate page.
+
+## `auth()`
+
+Works anywhere in a request — a controller, a middleware, a policy:
+
+```python
+from aso.auth import auth
+
+auth().user()     # the signed-in User, or None
+auth().id()       # user().id, or None for a guest — never raises
+auth().check()    # True if signed in
+auth().guest()    # True if not
+```
+
+All four are synchronous: the session middleware already loaded the user once for this
+request, so there's nothing left to `await`.
+
+## Logging in and out
+
+The starter kit's `AuthenticatedSessionController` does this already — you only write this
+yourself for a flow outside the normal login form (an API token exchange, a social-login
+callback):
+
+```python
+from aso.auth import auth
+from aso.session import session
+
+if await auth().attempt({"email": email, "password": password}, remember=True):
+    session().regenerate()
+    ...
+```
+
+```python
+await auth().logout()
+session().invalidate()
+session().regenerate_token()
+```
+
+Always regenerate the session after `login()` and invalidate it after `logout()` — this is
+what prevents session fixation, and it's on you to call it (the starter kit's controllers
+already do).
+
+`auth().login(user)` signs a user in directly, without checking a password — for "log the new
+registrant in immediately" after `create()`. `auth().attempt(...)` checks credentials first,
+and takes the same amount of time whether or not the email exists, so a failed attempt can't be
+used to discover which emails are registered.
+
+## Email verification
+
+Mix `MustVerifyEmail` into your user model (the starter kit already does) and protect routes
+with the `verified` middleware:
+
+```python
+from aso.auth import Authenticatable, MustVerifyEmail
+
+class User(MustVerifyEmail, Authenticatable, Model):
+    ...
+```
+
+```python
+Route.get("/dashboard", [DashboardController, "show"]).middleware("auth", "verified")
+```
+
+```python
+user.has_verified_email()
+await user.mark_email_as_verified()
+await user.send_email_verification_notification()
+```
+
+## Password hashing
+
+A `Hashed` column hashes on assignment — there's no separate "hash before saving" step to
+remember:
+
+```python
+from aso.database import Hashed
+from sqlalchemy import String
+
+password: Mapped[str] = mapped_column(Hashed(String(255)))
+```
+
+```python
+user.password = "a new plain-text password"   # already hashed by the time it's set
+await user.save()
+```
+
+`auth().attempt(...)` checks the hash for you. Reach for `aso.security.hash` directly only
+outside of model assignment — checking a `current_password` field during a sensitive action,
+say:
+
+```python
+from aso.security import hash as hash_
+
+hash_.check(plain_password, user.password)
+```
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `auth()->user()` | `auth().user()` |
+| `Auth::attempt([...])` | `await auth().attempt({...})` |
+| `Auth::login($user)` | `await auth().login(user)` |
+| `$request->session()->regenerate()` | `session().regenerate()` |
+| `Auth::logout()` | `await auth().logout()` |
+| `MustVerifyEmail` trait | `MustVerifyEmail` mixin |
+| `Hash::make($password)` | A `Hashed` column, or `hash.make(...)` directly |
+| Laravel Fortify / Breeze | Ships by default — nothing to install |
+
+## Gotchas
+
+- `auth().id()` never raises for a guest — it returns `None`, so `Todo.create(user_id=auth().id())`
+  silently creates a row with a null `user_id` if called outside an `auth`-protected route.
+  Guard the route with `.middleware("auth")`, not a manual `None` check in every controller.
+- `login()`/`logout()` don't regenerate the session themselves — call
+  `session().regenerate()`/`session().invalidate()` yourself (or use the starter kit's
+  controllers, which already do).
+- A `Hashed` column re-hashes on every assignment, including one you didn't mean as a password
+  change — only assign it when the value is actually new.

@@ -1,0 +1,134 @@
+---
+title: Authorization
+description: Gate abilities, policies found by convention, self.authorize(), and 403s.
+section: Security
+order: 30
+---
+
+Authorization answers "is this user allowed to do this," separately from "is this user signed
+in" (that's [middleware](/docs/middleware)'s `auth` alias). There are two ways to ask: a
+`Gate` ability for something that isn't tied to one model, and a policy for something that is.
+
+## Policies, found by convention
+
+```bash
+aso make:policy TodoPolicy --model=Todo
+```
+
+A policy is a plain class — no base class to extend — found automatically from the model it
+guards: `app/models/todo.py` → `app/policies/todo_policy.py` → `TodoPolicy`. Each method name
+is the ability; it takes the user first, then whatever else the check needs:
+
+<CodeFile name="app/policies/todo_policy.py">
+```python
+from app.models.todo import Todo
+from app.models.user import User
+
+
+class TodoPolicy:
+    async def update(self, user: User, todo: Todo) -> bool:
+        return user.id == todo.user_id
+
+    async def delete(self, user: User, todo: Todo) -> bool:
+        return user.id == todo.user_id
+```
+</CodeFile>
+
+A `before(user, ability)` method, if you add one, runs first for every ability on that policy —
+return `True` to allow everything (an admin override), `False` to deny everything, or `None` to
+fall through to the normal method.
+
+## Checking from a controller
+
+Every `Controller` has `self.authorize(ability, *args)`. It raises `AuthorizationException`
+(a 403) on denial instead of returning a boolean, so there's nothing to branch on:
+
+```python
+async def update(self, form: UpdateTodoRequest, todo: Todo):
+    await self.authorize("update", todo)
+    await todo.update(**form.validated())
+    return redirect().route("todos.index").with_flash("success", "Todo updated.")
+```
+
+A guest is denied automatically, without the policy method even running — unless that method's
+first parameter is annotated to allow `None` (`user: User | None`), the same rule Laravel's
+`Gate` uses for an ability that makes sense for a guest too.
+
+## Checking without raising
+
+```python
+from aso.auth import Gate
+
+if await Gate.allows("update", todo):
+    ...
+if await Gate.denies("update", todo):
+    ...
+```
+
+On a `User` instance directly (handy for passing a flag to the frontend, see below):
+
+```python
+await user.can("update", todo)
+await user.cannot("update", todo)
+```
+
+## Gate abilities (not tied to a model)
+
+```python
+from aso.auth import Gate
+
+Gate.define("access-admin", lambda user: user.is_admin)
+```
+
+```python
+await self.authorize("access-admin")
+```
+
+Register `Gate.define(...)` calls once, from `bootstrap/app.py` — the same place you register
+events and named rate limiters.
+
+## Exposing a permission to the frontend
+
+There's no automatic `can` prop — pass whatever flags the page needs explicitly, the same way
+you'd pass any other prop:
+
+```python
+async def show(self, todo: Todo):
+    return inertia("todos/show", {
+        "todo": todo,
+        "can": {"update": await auth().user().can("update", todo)},
+    })
+```
+
+```tsx
+{can.update && <EditButton />}
+```
+
+## 403 handling
+
+`AuthorizationException` renders the same way any other HTTP error does: JSON for an API
+request, an Inertia error page otherwise. You don't write an exception handler for it —
+`self.authorize(...)` raising it is already the whole mechanism.
+
+## Coming from Laravel
+
+| Laravel | Aso |
+|---|---|
+| `php artisan make:policy TodoPolicy --model=Todo` | `aso make:policy TodoPolicy --model=Todo` |
+| `$this->authorize('update', $todo)` | `await self.authorize("update", todo)` |
+| `Gate::allows('update', $todo)` | `await Gate.allows("update", todo)` |
+| `$user->can('update', $todo)` | `await user.can("update", todo)` |
+| `Gate::define('access-admin', ...)` | `Gate.define("access-admin", ...)` |
+| Policy `before()` | Same name, same meaning |
+| `AuthorizationException` → 403 | Same |
+
+## Gotchas
+
+- There's no `Policy` base class to extend — a plain class found by the
+  `app.models.X` → `app.policies.x_policy.XPolicy` naming convention, or registered explicitly
+  with `Gate.policy(Model, PolicyClass)` if you need a different mapping.
+- A policy method's first parameter being untyped (or typed just `User`, not `User | None`)
+  means a guest is denied before the method runs at all — annotate `User | None` deliberately
+  if that ability should make sense for a guest.
+- `self.authorize(...)` only exists on `Controller` subclasses; from a `FormRequest`'s
+  `authorize()` hook, call `Gate.allows(...)`/`user.can(...)` and return the boolean instead.
