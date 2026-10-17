@@ -135,6 +135,9 @@
   line-height: 1.75;
 }
 .code-panel code { font-family: var(--font-mono); }
+@media (max-width: 639px) {
+  .code-panel pre { padding: 1rem 1.25rem; font-size: 0.72rem; line-height: 1.7; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

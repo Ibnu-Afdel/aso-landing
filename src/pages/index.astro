@@ -140,7 +140,7 @@ const steps = [
             <span class="relative flex size-1.5"><span class="absolute inline-flex size-full animate-ping rounded-full bg-[var(--accent)] opacity-60"></span><span class="relative inline-flex size-1.5 rounded-full bg-[var(--accent)]"></span></span>
             v0.2 · early release · MIT
           </p>
-          <h1 class="rise mt-6 text-[2.6rem] leading-[1.05] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-[3.15rem]" style="--delay:.12s">
+          <h1 class="rise mt-6 text-[2.2rem] leading-[1.05] min-[400px]:text-[2.6rem] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-[3.15rem]" style="--delay:.12s">
             The batteries&#8209;included <span class="text-[var(--accent)]">Python</span> web framework.
           </h1>
           <p class="rise mt-6 max-w-xl text-lg leading-relaxed text-pretty text-[var(--muted)]" style="--delay:.2s">
@@ -153,7 +153,7 @@ const steps = [
               <span>uvx aso new myapp</span>
               <span class="ml-1 rounded-md border border-[var(--faint)] px-2 py-0.5 font-sans text-xs text-[var(--muted)] transition group-hover:text-[var(--fg)]" data-copy-label>Copy</span>
             </button>
-            <a href="#start" class="inline-flex items-center gap-1.5 rounded-xl px-4 py-3 text-sm font-medium text-[var(--muted)] transition hover:text-[var(--fg)]">
+            <a href="#start" class="inline-flex items-center gap-1.5 rounded-xl px-1 py-3 text-sm font-medium text-[var(--muted)] sm:px-4 transition hover:text-[var(--fg)]">
               Quick start
               <svg class="size-4 transition group-hover:translate-x-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.64l-3.22-3.22a.75.75 0 1 1 1.06-1.06l4.5 4.5a.75.75 0 0 1 0 1.06l-4.5 4.5a.75.75 0 1 1-1.06-1.06l3.22-3.22H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd"/></svg>
             </a>
@@ -163,18 +163,18 @@ const steps = [
 
         <!-- Crystal + live terminal -->
         <div class="relative mx-auto w-full max-w-md lg:max-w-none">
-          <Mark animated class="absolute -top-6 right-2 size-36 text-[var(--fg)] sm:size-44 lg:-top-14 lg:right-4" title="Aso crystal mark" />
-          <div class="rise relative mt-24 overflow-hidden rounded-2xl border border-white/5 bg-[#17211f] text-[#e3ddd0] shadow-[0_30px_80px_-30px_rgba(18,25,23,.55)] sm:mt-28" style="--delay:.35s">
+          <Mark animated class="absolute -top-6 right-2 hidden size-36 sm:block text-[var(--fg)] sm:size-44 lg:-top-14 lg:right-4" title="Aso crystal mark" />
+          <div class="rise relative overflow-hidden sm:mt-28 rounded-2xl border border-white/5 bg-[#17211f] text-[#e3ddd0] shadow-[0_30px_80px_-30px_rgba(18,25,23,.55)]" style="--delay:.35s">
             <div class="flex items-center gap-2 border-b border-white/5 px-4 py-3">
               <span class="size-2.5 rounded-full bg-white/15"></span>
               <span class="size-2.5 rounded-full bg-white/15"></span>
               <span class="size-2.5 rounded-full bg-white/15"></span>
               <span class="ml-3 font-mono text-xs text-white/40">~/code</span>
             </div>
-            <pre class="h-[19.5rem] overflow-hidden px-5 py-4 font-mono text-[0.8rem] leading-6 whitespace-pre-wrap" aria-label="Terminal demo: creating and running an Aso app" data-terminal><span class="text-[#8fae93]">$</span> uvx aso new myapp
+            <pre class="h-[22.5rem] overflow-hidden px-4 py-4 font-mono text-[0.72rem] leading-5 whitespace-pre-wrap sm:h-[19.5rem] sm:px-5 sm:text-[0.8rem] sm:leading-6" aria-label="Terminal demo: creating and running an Aso app" data-terminal><span class="text-[#8fae93]">$</span> uvx aso new myapp
 Creating a new Aso application in ./myapp...
 <span class="text-[#8fae93]">$</span> cd myapp && uv run aso dev
-  App   http://127.0.0.1:8000   &lt;- open this one</pre>
+  App   http://127.0.0.1:8000  &lt;- open</pre>
           </div>
         </div>
       </div>
@@ -190,7 +190,7 @@ Creating a new Aso application in ./myapp...
         </div>
 
         <div class="mt-12 grid gap-6 lg:grid-cols-[16rem_1fr]" data-reveal style="--delay:.1s">
-          <div class="flex gap-2 overflow-x-auto lg:flex-col" role="tablist" aria-label="Example files">
+          <div class="grid grid-cols-2 gap-2 sm:flex sm:overflow-x-auto lg:flex-col" role="tablist" aria-label="Example files">
             {samples.map((s, i) => (
               <button
                 type="button"
@@ -199,14 +199,14 @@ Creating a new Aso application in ./myapp...
                 aria-controls={`panel-${s.id}`}
                 aria-selected={i === 0 ? 'true' : 'false'}
                 data-tab={s.id}
-                class="shrink-0 rounded-xl border border-transparent px-4 py-3 text-left font-mono text-xs text-[var(--muted)] transition hover:text-[var(--fg)] aria-selected:border-[var(--faint)] aria-selected:bg-[var(--raised)] aria-selected:text-[var(--fg)]"
+                class="min-w-0 shrink-0 truncate rounded-xl border border-transparent px-4 py-3 text-left font-mono text-xs text-[var(--muted)] transition hover:text-[var(--fg)] aria-selected:border-[var(--faint)] aria-selected:bg-[var(--raised)] aria-selected:text-[var(--fg)]"
               >
                 <span class="mr-2 text-[var(--accent)]">0{i + 1}</span>{s.file.split('/').pop()}
                 <span class="mt-1 hidden truncate text-[0.68rem] opacity-60 lg:block">{s.file}</span>
               </button>
             ))}
           </div>
-          <div class="code-panel min-h-[25rem] overflow-hidden rounded-2xl border border-white/5 bg-[#17211f] shadow-[0_30px_80px_-40px_rgba(18,25,23,.5)]">
+          <div class="code-panel overflow-hidden lg:min-h-[25rem] rounded-2xl border border-white/5 bg-[#17211f] shadow-[0_30px_80px_-40px_rgba(18,25,23,.5)]">
             {samples.map((s, i) => (
               <div id={`panel-${s.id}`} role="tabpanel" aria-labelledby={`tab-${s.id}`} hidden={i !== 0} data-panel={s.id}>
                 <div class="border-b border-white/5 px-6 py-3 font-mono text-xs text-white/45">{s.file}</div>
@@ -249,7 +249,7 @@ Creating a new Aso application in ./myapp...
             Every app ships with an <code class="font-mono text-[0.9em] text-[var(--fg)]">AGENTS.md</code> and architecture tests that run with your suite. Raw SQL with f-strings, queries in controllers, models that import HTTP code: they fail the build, whoever wrote them.
           </p>
         </div>
-        <div class="rounded-2xl border border-[var(--faint)] bg-[var(--raised)] p-6 font-mono text-[0.8rem] leading-7" data-reveal style="--delay:.1s">
+        <div class="rounded-2xl border border-[var(--faint)] bg-[var(--raised)] p-5 font-mono text-[0.7rem] leading-6 sm:p-6 sm:text-[0.8rem] sm:leading-7" data-reveal style="--delay:.1s">
           <p class="text-[var(--muted)]">$ uv run pytest tests/architecture</p>
           <p><span class="text-[var(--accent)]">✓</span> A1  controllers don't import sqlalchemy</p>
           <p><span class="text-[var(--accent)]">✓</span> A2  models work without a request</p>
@@ -372,8 +372,8 @@ Creating a new Aso application in ./myapp...
     { out: 'Migration table migrated successfully.', cls: 'text-white/55' },
     { out: 'Aso application ready.', cls: 'text-[#8fae93]', pause: 700 },
     { cmd: 'cd myapp && uv run aso dev' },
-    { out: '  App   http://127.0.0.1:8000   <- open this one', cls: 'text-[#e3ddd0]' },
-    { out: '  Vite  http://localhost:5173   (assets + hot reload)', cls: 'text-white/55' },
+    { out: '  App   http://127.0.0.1:8000  <- open', cls: 'text-[#e3ddd0]' },
+    { out: '  Vite  http://localhost:5173  (hot reload)', cls: 'text-white/55' },
     { out: 'server | Application startup complete.', cls: 'text-white/40' },
     { out: 'routes | Wrote 22 file(s).', cls: 'text-white/40', pause: 3200 },
   ];
