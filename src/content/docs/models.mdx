@@ -60,7 +60,8 @@ no separate `$casts` array. Two column types handle the common "needs special tr
 way in or out" cases:
 
 ```python
-from aso.database import Hashed, UtcDateTime
+from aso.database import Hashed
+from aso.database.types import UtcDateTime
 
 password: Mapped[str] = mapped_column(Hashed(String(255)))   # hashed on assignment
 posted_at: Mapped[datetime] = mapped_column(UtcDateTime)       # always round-trips aware UTC

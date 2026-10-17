@@ -5,7 +5,7 @@ section: Python & FastAPI
 order: 34
 ---
 
-PHP has no event loop to think about — each request runs start to finish on its own. Python's
+PHP has no event loop to think about: each request runs start to finish on its own. Python's
 `async`/`await` means a single process can hold many requests in flight at once, but only if
 every I/O-bound call says so explicitly. This page is the handful of things that trip up a
 Laravel developer meeting that for the first time.
@@ -38,7 +38,7 @@ This doesn't run the query. It returns a `coroutine` object — a paused functio
 use it as a list:
 
 ```
-TypeError: object of type 'coroutine' is not subscriptable
+TypeError: 'coroutine' object is not subscriptable
 ```
 
 Python usually also prints a `RuntimeWarning: coroutine '...' was never awaited` pointing at
@@ -126,7 +126,8 @@ that.
   nothing, which is far more confusing than a loud error. Watch for the `RuntimeWarning` in
   your terminal.
 - A list comprehension or `for` loop over `async def` calls still needs each call awaited
-  individually (`[await f(x) for x in items]`), or gathered with `asyncio.gather(*[f(x) for x
-  in items])` for concurrency.
+  individually (`[await f(x) for x in items]`). Don't reach for `asyncio.gather()` to run
+  queries in parallel: a request shares one database session, and a session runs one query at
+  a time.
 - `uv run aso ...` and `aso ...` (after activating the venv) are equivalent — pick one and stay
   consistent within a script or CI job.

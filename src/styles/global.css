@@ -214,6 +214,16 @@
   border-collapse: collapse;
   font-size: 0.9rem;
 }
+@media (max-width: 767px) {
+  /* Wide tables scroll inside themselves instead of pushing the page sideways. */
+  .prose-aso table {
+    display: block;
+    overflow-x: auto;
+    font-size: 0.82rem;
+  }
+  .prose-aso th,
+  .prose-aso td { min-width: 9rem; }
+}
 .prose-aso th,
 .prose-aso td {
   border-bottom: 1px solid var(--faint);

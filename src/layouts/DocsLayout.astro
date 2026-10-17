@@ -66,7 +66,7 @@ const components = {
   <div class="mx-auto flex max-w-7xl gap-10 px-5 sm:px-8">
     <!-- Sidebar -->
     <aside data-sidebar class="hidden w-56 shrink-0 lg:block">
-      <nav class="sticky top-24 space-y-7 py-10 text-sm" aria-label="Docs navigation">
+      <nav class="sticky top-16 max-h-[calc(100dvh-4rem)] space-y-7 overflow-y-auto py-10 pr-2 text-sm [scrollbar-width:thin]" aria-label="Docs navigation">
         {sections.map((section) => (
           <div>
             <p class="mb-2 font-mono text-xs tracking-wider text-[var(--muted)] uppercase">{section}</p>
