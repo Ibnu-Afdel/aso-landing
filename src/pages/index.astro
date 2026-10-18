@@ -122,13 +122,23 @@ const steps = [
         <a href="#code" class="hidden rounded-full px-3.5 py-1.5 text-[var(--muted)] transition hover:text-[var(--fg)] sm:block">Code</a>
         <a href="#features" class="hidden rounded-full px-3.5 py-1.5 text-[var(--muted)] transition hover:text-[var(--fg)] sm:block">Features</a>
         <a href="#start" class="hidden rounded-full px-3.5 py-1.5 text-[var(--muted)] transition hover:text-[var(--fg)] sm:block">Get started</a>
-        <a href="/docs" class="hidden rounded-full px-3.5 py-1.5 text-[var(--muted)] transition hover:text-[var(--fg)] sm:block">Docs</a>
+        <a href="/docs" class="rounded-full px-3 py-1.5 font-medium text-[var(--fg)] transition hover:opacity-80 sm:px-3.5 sm:font-normal sm:text-[var(--muted)] sm:hover:text-[var(--fg)]">Docs</a>
         <a href={github} class="ml-2 inline-flex items-center gap-2 rounded-full bg-[var(--fg)] px-4 py-1.5 font-medium text-[var(--bg)] transition hover:opacity-85">
           <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.39-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
           GitHub
         </a>
+        <button type="button" data-home-menu aria-expanded="false" aria-controls="home-menu" aria-label="Open menu" class="ml-1 inline-flex size-9 items-center justify-center rounded-full border border-[var(--faint)] text-[var(--fg)] sm:hidden">
+          <svg class="size-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6.5h13M3.5 13.5h13" /></svg>
+        </button>
       </div>
     </nav>
+    <div id="home-menu" data-home-menu-panel hidden class="border-t border-[var(--faint)] bg-[var(--bg)] px-5 pb-5 sm:hidden">
+      <a href="#code" class="block border-b border-[var(--faint)] py-3.5 text-[var(--fg)]">Code</a>
+      <a href="#features" class="block border-b border-[var(--faint)] py-3.5 text-[var(--fg)]">Features</a>
+      <a href="#start" class="block border-b border-[var(--faint)] py-3.5 text-[var(--fg)]">Get started</a>
+      <a href="/docs" class="block border-b border-[var(--faint)] py-3.5 text-[var(--fg)]">Docs</a>
+      <a href="https://pypi.org/project/aso/" class="block py-3.5 text-[var(--fg)]">PyPI</a>
+    </div>
   </header>
 
   <main>
@@ -328,6 +338,18 @@ Creating a new Aso application in ./myapp...
   const onScroll = () => nav?.classList.toggle('scrolled', window.scrollY > 8);
   onScroll();
   window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Phone menu.
+  const menuButton = document.querySelector<HTMLButtonElement>('[data-home-menu]');
+  const menuPanel = document.querySelector<HTMLElement>('[data-home-menu-panel]');
+  const setMenu = (open: boolean) => {
+    if (!menuButton || !menuPanel) return;
+    menuPanel.hidden = !open;
+    menuButton.setAttribute('aria-expanded', String(open));
+    nav?.classList.toggle('menu-open', open);
+  };
+  menuButton?.addEventListener('click', () => setMenu(menuPanel?.hidden ?? false));
+  menuPanel?.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => setMenu(false)));
 
   // Reveal sections as they enter the viewport.
   const io = new IntersectionObserver(

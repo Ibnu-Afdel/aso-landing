@@ -101,7 +101,7 @@ const components = {
         <span class="text-sm font-medium">Docs</span>
         <button type="button" data-menu-close class="rounded-full border border-[var(--faint)] px-3.5 py-1.5 text-sm text-[var(--muted)]">Close</button>
       </div>
-      <nav class="space-y-7 overflow-y-auto px-5 py-8 text-sm" aria-label="Docs navigation (mobile)">
+      <nav class="h-[calc(100dvh-4rem)] space-y-7 overflow-y-auto overscroll-contain px-5 py-8 text-sm" aria-label="Docs navigation (mobile)">
         {sections.map((section) => (
           <div>
             <p class="mb-2 font-mono text-xs tracking-wider text-[var(--muted)] uppercase">{section}</p>
@@ -120,6 +120,11 @@ const components = {
             </ul>
           </div>
         ))}
+        <div class="flex gap-5 border-t border-[var(--faint)] pt-6 text-[var(--muted)]">
+          <a href="/" class="hover:text-[var(--fg)]">Home</a>
+          <a href={github} class="hover:text-[var(--fg)]">GitHub</a>
+          <a href="https://pypi.org/project/aso/" class="hover:text-[var(--fg)]">PyPI</a>
+        </div>
       </nav>
     </div>
 
