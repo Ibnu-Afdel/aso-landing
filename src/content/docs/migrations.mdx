@@ -41,8 +41,11 @@ aso migrate
 ```
 
 ```
-Migration table migrated successfully.
+  Migrated: 25d246f4b11c  create users, password_reset_tokens, sessions and failed_jobs tables
+Ran 1 migration(s).
 ```
+
+When everything has already run, it prints `Nothing to migrate.`
 
 ```bash
 aso migrate:status     # which revisions have run

@@ -19,6 +19,16 @@ return inertia("posts/index", {"posts": posts})
 maps to `resources/js/pages/posts/index.tsx`. In `local`/`testing` environments, a missing page
 file raises `PageNotFound` immediately, with the path it looked for, instead of a blank screen.
 
+Prop names are snake_case, the same on both sides. The starter's login page is an example:
+
+```python
+return inertia("auth/login", {"can_reset_password": True, "status": status})
+```
+
+```tsx
+export default function Login({ can_reset_password, status }: Props) { ... }
+```
+
 ## Serialization
 
 A prop value is converted to JSON automatically, recursively:

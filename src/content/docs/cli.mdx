@@ -46,6 +46,19 @@ below also takes `--help` for its full option list.
 | `make:page` | An Inertia page component under `resources/js/pages/`. | `--force` |
 | `make:test` | A pytest file under `tests/feature/` (or `tests/unit/`). | `--unit` |
 
+Names can include folders. They become snake_case packages, and the class keeps its name:
+
+```bash
+aso make:controller Admin/UserController --resource
+# app/http/controllers/admin/user_controller.py   class UserController
+# pages admin/users/index, routes admin.users.index
+
+aso make:page Admin/UserList
+# resources/js/pages/admin/user-list.tsx            inertia("admin/user-list")
+```
+
+A typo in a command's options prints the usage line and exits with code 2, like any Click CLI.
+
 ## Database
 
 | Command | Does |
@@ -75,7 +88,7 @@ below also takes `--help` for its full option list.
 |---|---|
 | `queue:work` | Processes jobs as a daemon (`--queue=`, `--concurrency=`). |
 | `queue:failed` | Lists failed jobs. |
-| `queue:retry` | Retries one or more failed jobs by id, or `--all`. |
+| `queue:retry` | Retries failed jobs by id (`aso queue:retry 3 7`), or all of them (`aso queue:retry all`). |
 | `queue:forget` | Deletes one failed job by id. |
 | `queue:flush` | Deletes every failed job. |
 | `queue:restart` | Signals workers to finish their current job, then exit. |
